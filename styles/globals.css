@@ -1,0 +1,166 @@
+/* Import Tailwind's layers - this must be at the top */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import Google Fonts for better typography */
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Base layer - fundamental styles and CSS custom properties */
+@layer base {
+  /* CSS Variables for consistent theming */
+  :root {
+    /* Color scheme helps browser pick appropriate form styles */
+    color-scheme: light;
+    
+    /* Custom properties for dynamic values */
+    --header-height: 64px;
+    --footer-height: 200px;
+    
+    /* Smooth scrolling for anchor links */
+    scroll-behavior: smooth;
+  }
+
+  /* Remove tap highlight on mobile for cleaner interactions */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Better focus styles for accessibility */
+  *:focus-visible {
+    outline: 2px solid #1A3C8C;
+    outline-offset: 2px;
+  }
+
+  /* Ensure images and videos are responsive by default */
+  img, video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Better default typography */
+  body {
+    /* Mobile-first: start with smaller line height */
+    line-height: 1.5;
+    /* Smooth font rendering on all devices */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Responsive typography for better mobile reading */
+  @media (min-width: 768px) {
+    body {
+      line-height: 1.6;
+    }
+  }
+
+  /* Headings should have tighter line height */
+  h1, h2, h3, h4, h5, h6 {
+    line-height: 1.2;
+  }
+}
+
+/* Component layer - reusable component styles */
+@layer components {
+  /* Primary button style - mobile-first with large touch targets */
+  .btn-primary {
+    @apply px-6 py-3 bg-marian-blue-500 text-white rounded-lg font-semibold;
+    @apply hover:bg-marian-blue-600 active:bg-marian-blue-700;
+    @apply transition-colors duration-200;
+    @apply touch-manipulation; /* Prevents delay on touch devices */
+    /* Minimum touch target size for mobile (48x48px recommended by Google) */
+    min-height: 48px;
+    min-width: 48px;
+  }
+
+  /* Secondary button style */
+  .btn-secondary {
+    @apply px-6 py-3 bg-white border-2 border-marian-blue-500 text-marian-blue-500 rounded-lg font-semibold;
+    @apply hover:bg-marian-blue-50 active:bg-marian-blue-100;
+    @apply transition-colors duration-200;
+    @apply touch-manipulation;
+    min-height: 48px;
+    min-width: 48px;
+  }
+
+  /* Container with mobile-first padding */
+  .container-mobile {
+    @apply px-4 mx-auto;
+    @apply sm:px-6;
+    @apply lg:px-8;
+    @apply max-w-7xl;
+  }
+
+  /* Card component for memorial cards */
+  .memorial-card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+    @apply p-4 sm:p-6;
+    @apply hover:shadow-md transition-shadow duration-200;
+  }
+
+  /* Text styles with fluid typography */
+  .text-hero {
+    @apply text-fluid-3xl sm:text-fluid-4xl font-serif font-bold;
+  }
+
+  .text-title {
+    @apply text-fluid-2xl sm:text-fluid-3xl font-serif font-semibold;
+  }
+
+  .text-subtitle {
+    @apply text-fluid-lg sm:text-fluid-xl font-sans text-gray-600;
+  }
+
+  .text-body {
+    @apply text-fluid-base font-sans text-gray-700;
+  }
+}
+
+/* Utility layer - one-off utilities */
+@layer utilities {
+  /* Safe area padding for mobile devices with notches */
+  .safe-padding-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-padding-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Prevent text selection for UI elements */
+  .no-select {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Improved touch scrolling for mobile */
+  .touch-scroll {
+    -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Print styles for memorial pages */
+@media print {
+  /* Hide navigation and interactive elements when printing */
+  nav, footer, button, .no-print {
+    display: none !important;
+  }
+
+  /* Ensure memorial content prints nicely */
+  .memorial-content {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
