@@ -35,15 +35,14 @@ const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
     
     return (
       <div className={cn('form-input-container', containerClassName)}>
-        {label && (
-          <label 
-            htmlFor={inputId}
-            className="form-input-label"
-          >
-            {label}
-            {required && <span className="text-red-500 ml-1">*</span>}
-          </label>
-        )}
+       {label && (
+  <label 
+    htmlFor={inputId}
+    className="form-input-label"
+  >
+    {label}
+  </label>
+)}
         
         <div className={cn(
           'form-input-wrapper',
