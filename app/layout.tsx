@@ -81,12 +81,14 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  // Style object to prevent iOS font size adjustment
+  const htmlStyle = { WebkitTextSizeAdjust: '100%' }
+  
   return (
     <html 
       lang="en" 
       className={`${inter.variable} ${crimsonText.variable}`}
-      // Prevent iOS from adjusting font sizes in landscape mode
-      style={{ WebkitTextSizeAdjust: '100%' }}
+      style={htmlStyle}
     >
       <body className="font-sans bg-white text-gray-900 min-h-screen flex flex-col">
         {/* Skip to main content link for screen readers */}
@@ -94,4 +96,46 @@ export default function RootLayout({
           href="#main-content" 
           className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-marian-blue-500 text-white px-4 py-2 rounded-md z-50"
         >
-          Skip
+          Skip to main content
+        </a>
+
+        {/* Main app structure with semantic HTML */}
+        <div className="flex flex-col min-h-screen">
+          {/* Navbar will go here */}
+          <header className="sticky top-0 z-40 bg-white border-b border-gray-100">
+            <nav className="container-mobile py-4">
+              <div className="flex items-center justify-between">
+                <a href="/" className="text-xl font-serif font-bold text-marian-blue-500">
+                  Catholic Memorials
+                </a>
+                {/* Mobile menu button - you'll implement this later */}
+                <button 
+                  className="lg:hidden p-2 rounded-md hover:bg-gray-100"
+                  aria-label="Open menu"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              </div>
+            </nav>
+          </header>
+
+          {/* Main content area */}
+          <main id="main-content" className="flex-grow">
+            {children}
+          </main>
+
+          {/* Footer will go here */}
+          <footer className="bg-gray-50 border-t border-gray-200 mt-auto">
+            <div className="container-mobile py-8">
+              <p className="text-center text-sm text-gray-600">
+                © 2024 Catholic Memorials. All rights reserved.
+              </p>
+            </div>
+          </footer>
+        </div>
+      </body>
+    </html>
+  )
+}
