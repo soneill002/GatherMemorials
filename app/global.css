@@ -1,0 +1,16 @@
+/* Global CSS loaded once for the entire app.
+   Keep this tiny on Day One. We’ll add Tailwind later. */
+
+:root {
+  color-scheme: light; /* Helps the browser pick light-mode UI defaults */
+}
+
+/* Apply a consistent box model so padding/borders don’t surprise you */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Remove default link colors (we’ll style links inline or via components) */
+a {
+  color: inherit;
+}
