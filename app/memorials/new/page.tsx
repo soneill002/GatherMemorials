@@ -6,7 +6,20 @@
 import { useState } from 'react'
 import FormInput from '@/components/forms/FormInput'
 import { FormGroup } from '@/components/forms/FormGroup'
-import type { CreateMemorialInput } from '@/types/memorial'
+
+// Extended interface to include optional fields
+interface CreateMemorialInput {
+  title?: string
+  firstName?: string
+  middleName?: string
+  lastName?: string
+  nickname?: string
+  birthDate?: string
+  deathDate?: string
+  obituary?: string
+  privacy?: string
+  password?: string
+}
 
 // Progress indicator component (could be moved to components/ui/)
 function ProgressIndicator({ currentStep, totalSteps }: { currentStep: number, totalSteps: number }) {
@@ -101,26 +114,44 @@ export default function NewMemorialPage() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="form-section">
           {/* Name Fields */}
-          <FormGroup columns={2}>
-            <FormInput
-              label="First Name"
-              name="firstName"
-              placeholder="John"
-              value={formData.firstName || ''}
-              onChange={handleChange}
-              error={errors.firstName}
-              required
-            />
-            <FormInput
-              label="Last Name"
-              name="lastName"
-              placeholder="Smith"
-              value={formData.lastName || ''}
-              onChange={handleChange}
-              error={errors.lastName}
-              required
-            />
-          </FormGroup>
+         {/* Name Fields */}
+<FormGroup columns={2}>
+  <FormInput
+    label="First Name"
+    name="firstName"
+    placeholder="John"
+    value={formData.firstName || ''}
+    onChange={handleChange}
+    error={errors.firstName}
+    required
+  />
+  <FormInput
+    label="Middle Name (optional)"
+    name="middleName"
+    placeholder="Michael"
+    value={formData.middleName || ''}
+    onChange={handleChange}
+  />
+</FormGroup>
+
+<FormGroup columns={2}>
+  <FormInput
+    label="Last Name"
+    name="lastName"
+    placeholder="Smith"
+    value={formData.lastName || ''}
+    onChange={handleChange}
+    error={errors.lastName}
+    required
+  />
+  <FormInput
+    label="Nickname (optional)"
+    name="nickname"
+    placeholder="Johnny"
+    value={formData.nickname || ''}
+    onChange={handleChange}
+  />
+</FormGroup>
 
           {/* Date Fields */}
           <FormGroup columns={2}>

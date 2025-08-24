@@ -8,13 +8,15 @@ export interface Memorial {
   id: string
   userId: string
   
-  // Basic information
-  title: string
-  firstName: string
-  lastName: string
-  birthDate: Date | string
-  deathDate: Date | string
-  
+// Basic information
+title: string
+firstName: string
+middleName?: string | null
+lastName: string
+nickname?: string | null
+birthDate: Date | string
+deathDate: Date | string
+
   // Content
   obituary: string | null
   biography: string | null
@@ -117,7 +119,9 @@ export interface MemorialContributor {
 export interface CreateMemorialInput {
   title: string
   firstName: string
+  middleName?: string
   lastName: string
+  nickname?: string
   birthDate: string
   deathDate: string
   obituary?: string
