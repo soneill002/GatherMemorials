@@ -8,14 +8,14 @@ export default function Home() {
         <div className="text-center space-y-6 animate-fade-in">
           {/* Main headline with fluid typography */}
           <h1 className="text-hero text-gray-900 leading-tight">
-            Honor a life in the{' '}
+            Gather memories in the{' '}
             <span className="text-marian-blue-500">Catholic tradition</span>
           </h1>
           
           {/* Subtitle with responsive sizing */}
           <p className="text-subtitle max-w-2xl mx-auto">
-            Create a beautiful digital memorial with prayers, virtual candles, 
-            and parish support. Share memories and celebrate a life of faith.
+            Create a beautiful digital memorial where family and friends can 
+            gather to share memories, prayers, and celebrate a life of faith.
           </p>
           
           {/* CTA Buttons - Stack on mobile, inline on desktop */}
@@ -40,7 +40,7 @@ export default function Home() {
       <section className="bg-gray-50 py-12 sm:py-16 lg:py-20">
         <div className="container-mobile">
           <h2 className="text-title text-center mb-8 sm:mb-12">
-            Faith-Centered Features
+            Gather Together in Faith
           </h2>
           
           {/* Responsive grid - single column on mobile, 3 columns on desktop */}
@@ -112,7 +112,7 @@ export default function Home() {
       {/* CTA Section */}
       <section className="bg-marian-blue-500 text-white py-12 sm:py-16">
         <div className="container-mobile text-center space-y-6">
-          <h2 className="text-title">Ready to create a lasting tribute?</h2>
+          <h2 className="text-title">Ready to gather and remember?</h2>
           <p className="text-lg opacity-90 max-w-2xl mx-auto">
             Start with our free plan. Upgrade anytime for additional features.
           </p>

@@ -19,34 +19,34 @@ const crimsonText = Crimson_Text({
 // SEO and Open Graph metadata
 export const metadata: Metadata = {
   title: {
-    default: 'Catholic Memorials - Faith-Centered Digital Memorials',
-    template: '%s | Catholic Memorials', // For dynamic titles
+    default: 'Gather Memorials - Faith-Centered Digital Memorials',
+    template: '%s | Gather Memorials', // For dynamic titles
   },
   description: 'Create beautiful, faith-centered digital memorials with prayers, virtual candles, and parish support. Honor your loved ones in the Catholic tradition.',
-  keywords: ['Catholic memorials', 'digital memorial', 'online obituary', 'Catholic funeral', 'memorial website'],
-  authors: [{ name: 'Catholic Memorials' }],
-  creator: 'Catholic Memorials',
-  publisher: 'Catholic Memorials',
-  metadataBase: new URL('https://catholicmemorials.com'), // Change to your domain
+  keywords: ['Catholic memorials', 'digital memorial', 'online obituary', 'Catholic funeral', 'memorial website', 'Gather Memorials'],
+  authors: [{ name: 'Gather Memorials' }],
+  creator: 'Gather Memorials',
+  publisher: 'Gather Memorials',
+  metadataBase: new URL('https://gathermemorials.com'), // Change to your actual domain
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://catholicmemorials.com',
-    siteName: 'Catholic Memorials',
-    title: 'Catholic Memorials - Faith-Centered Digital Memorials',
+    url: 'https://gathermemorials.com',
+    siteName: 'Gather Memorials',
+    title: 'Gather Memorials - Faith-Centered Digital Memorials',
     description: 'Create beautiful, faith-centered digital memorials with prayers, virtual candles, and parish support.',
     images: [
       {
         url: '/og-image.png', // You'll add this image later
         width: 1200,
         height: 630,
-        alt: 'Catholic Memorials',
+        alt: 'Gather Memorials',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Catholic Memorials',
+    title: 'Gather Memorials',
     description: 'Create beautiful, faith-centered digital memorials',
     images: ['/og-image.png'],
   },
@@ -106,7 +106,7 @@ export default function RootLayout({
             <nav className="container-mobile py-4">
               <div className="flex items-center justify-between">
                 <a href="/" className="text-xl font-serif font-bold text-marian-blue-500">
-                  Catholic Memorials
+                  Gather Memorials
                 </a>
                 {/* Mobile menu button - you'll implement this later */}
                 <button 
@@ -130,7 +130,7 @@ export default function RootLayout({
           <footer className="bg-gray-50 border-t border-gray-200 mt-auto">
             <div className="container-mobile py-8">
               <p className="text-center text-sm text-gray-600">
-                © 2024 Catholic Memorials. All rights reserved.
+                © 2024 Gather Memorials. All rights reserved.
               </p>
             </div>
           </footer>

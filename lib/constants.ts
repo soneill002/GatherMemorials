@@ -65,7 +65,7 @@ export const API_ROUTES = {
 
 // External service URLs
 export const EXTERNAL_URLS = {
-  SUPPORT: 'https://support.catholicmemorials.com',
+  SUPPORT: 'https://support.gathermemorials.com',
   PRIVACY: '/privacy',
   TERMS: '/terms',
   PARISH_SIGNUP: '/partners',
@@ -84,8 +84,8 @@ export const VALIDATION = {
 
 // SEO defaults
 export const SEO = {
-  DEFAULT_TITLE: 'Catholic Memorials',
-  TITLE_TEMPLATE: '%s | Catholic Memorials',
+  DEFAULT_TITLE: 'Gather Memorials',
+  TITLE_TEMPLATE: '%s | Gather Memorials',
   DEFAULT_DESCRIPTION: 'Create beautiful, faith-centered digital memorials with prayers, virtual candles, and parish support.',
 } as const
 
