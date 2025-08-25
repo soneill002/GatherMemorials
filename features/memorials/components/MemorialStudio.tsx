@@ -11,13 +11,12 @@ import { Memorial } from '@/types/memorial'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useAutoSave } from '@/features/memorials/hooks/useAutoSave'
-import { useMemorialStore } from '@/features/memorials/store'
 import StudioHeader from './StudioHeader'
 import StudioForm from './StudioForm'
 import MemorialPreview from './MemorialPreview'
 import MobileStudioTabs from './MobileStudioTabs'
 import { validateMemorial } from '@/features/memorials/validations'
-import { toast } from '@/components/ui/toast'
+import { useToast } from '@/components/ui/toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 interface MemorialStudioProps {
@@ -35,6 +34,7 @@ export default function MemorialStudio({ mode, initialData, memorialId }: Memori
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const isMobile = useMediaQuery('(max-width: 1023px)')
   const router = useRouter()
+  const toast = useToast()
 
   // State management
   const [formData, setFormData] = useState<Partial<Memorial>>(initialData || {})
@@ -122,20 +122,24 @@ export default function MemorialStudio({ mode, initialData, memorialId }: Memori
 
     // Navigate to payment/publish flow
     router.push(`/memorials/${memorialId || 'new'}/publish`)
-  }, [formData, memorialId, isMobile, router])
+  }, [formData, memorialId, isMobile, router, toast])
 
   // Handle theme changes
   const handleThemeChange = useCallback((theme: PreviewTheme) => {
     setPreviewTheme(theme)
     // Store preference in localStorage
-    localStorage.setItem('memorial-preview-theme', theme)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('memorial-preview-theme', theme)
+    }
   }, [])
 
   // Load theme preference on mount
   useEffect(() => {
-    const saved = localStorage.getItem('memorial-preview-theme') as PreviewTheme
-    if (saved && PREVIEW_THEMES.includes(saved)) {
-      setPreviewTheme(saved)
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('memorial-preview-theme') as PreviewTheme
+      if (saved && PREVIEW_THEMES.includes(saved)) {
+        setPreviewTheme(saved)
+      }
     }
   }, [])
 
