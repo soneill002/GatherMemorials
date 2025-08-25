@@ -34,7 +34,7 @@ export default function MemorialStudio({ mode, initialData, memorialId }: Memori
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const isMobile = useMediaQuery('(max-width: 1023px)')
   const router = useRouter()
-  const toast = useToast()
+  const { toast } = useToast()
 
   // State management
   const [formData, setFormData] = useState<Partial<Memorial>>(initialData || {})
@@ -72,7 +72,11 @@ export default function MemorialStudio({ mode, initialData, memorialId }: Memori
       }
     },
     onError: (error) => {
-      toast.error('Failed to save changes. Please try again.')
+      toast({
+        title: 'Failed to save',
+        description: 'Please try again',
+        variant: 'destructive'
+      })
       console.error('Save error:', error)
     }
   })
@@ -106,7 +110,11 @@ export default function MemorialStudio({ mode, initialData, memorialId }: Memori
     
     if (!validation.isValid) {
       setValidationErrors(validation.errors)
-      toast.error('Please complete all required fields')
+      toast({
+        title: 'Please complete required fields',
+        description: 'Check the form for errors',
+        variant: 'destructive'
+      })
       
       // Scroll to first error on mobile
       if (isMobile) {
@@ -214,12 +222,12 @@ export default function MemorialStudio({ mode, initialData, memorialId }: Memori
                 {previewZoom === '100%' ? '📱' : '🖥️'} {previewZoom}
               </button>
 
-              {/* Full preview */}
-              
+              {/* Full preview - FIXED: Added complete <a> tag */}
+              <a
                 href={`/memorials/${memorialId || 'preview'}?theme=${previewTheme}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm shadow-sm hover:bg-gray-50"
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm shadow-sm hover:bg-gray-50 inline-flex items-center"
                 aria-label="Open full preview in new tab"
               >
                 ↗️ Full
