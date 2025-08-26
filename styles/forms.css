@@ -1,0 +1,117 @@
+/* styles/forms.css */
+/* Dedicated styles for form components - keeping styling separate from logic */
+
+@layer components {
+  /* Form Input Container */
+  .form-input-container {
+    @apply w-full min-w-0;
+  }
+
+  /* Form Input Label */
+  .form-input-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
+  /* Form Input Wrapper - handles overflow for date inputs */
+  .form-input-wrapper {
+    @apply relative min-w-0 w-full;
+  }
+
+  /* Special wrapper for date inputs to prevent mobile overflow */
+  .date-input-wrapper {
+    @apply overflow-hidden;
+  }
+
+  /* Base Form Input Styles */
+  .form-input {
+    @apply w-full px-4 py-3;
+    @apply border border-gray-300 rounded-lg;
+    @apply text-gray-900 placeholder-gray-400;
+    @apply transition-colors duration-200;
+    @apply focus:ring-2 focus:ring-marian-blue-500 focus:border-transparent;
+    @apply disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed;
+    
+    /* Ensure proper box model */
+    box-sizing: border-box;
+  }
+
+  /* Date Input Specific Styles - Fixes mobile overflow */
+  .form-input-date {
+    /* Force date inputs to respect container width on mobile */
+    min-width: 0 !important;
+    max-width: 100% !important;
+    
+    /* iOS Safari date input fixes */
+    -webkit-appearance: none;
+    appearance: none;
+    
+    /* Restore native date picker on focus */
+    &::-webkit-calendar-picker-indicator {
+      @apply cursor-pointer opacity-70 hover:opacity-100;
+    }
+    
+    /* Android Chrome fixes */
+    &::-webkit-datetime-edit-fields-wrapper {
+      @apply p-0;
+    }
+  }
+
+  /* Error State */
+  .form-input-error {
+    @apply border-red-500 focus:ring-red-500;
+  }
+
+  /* Hint Text */
+  .form-input-hint {
+    @apply mt-1 text-sm text-gray-500;
+  }
+
+  /* Error Message */
+  .form-input-error-message {
+    @apply mt-1 text-sm text-red-600;
+  }
+
+  /* Form Group for Grid Layouts */
+  .form-group {
+    @apply grid gap-4;
+    
+    /* Prevent grid blowout on mobile */
+    @apply min-w-0;
+    
+    /* Ensure all children respect grid boundaries */
+    & > * {
+      @apply min-w-0;
+    }
+  }
+
+  /* Form Section Spacing */
+  .form-section {
+    @apply space-y-6;
+  }
+
+  /* Form Actions Container */
+  .form-actions {
+    @apply flex flex-col sm:flex-row gap-4 pt-4;
+  }
+}
+
+/* Mobile-specific form fixes */
+@media (max-width: 640px) {
+  /* Ensure date inputs don't cause horizontal scroll */
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="time"],
+  input[type="month"],
+  input[type="week"] {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  
+  /* iOS specific fixes */
+  @supports (-webkit-touch-callout: none) {
+    input[type="date"],
+    input[type="datetime-local"] {
+      min-height: 48px; /* Apple's recommended touch target */
+    }
+  }
+}
