@@ -1,0 +1,122 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { MemorialWizard } from '@/features/memorials/components/MemorialWizard';
+import { Button } from '@/components/ui/Button';
+import Link from 'next/link';
+
+export default function NewMemorialPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = createClientComponentClient();
+  
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [memorialData, setMemorialData] = useState(null);
+  
+  const memorialId = searchParams.get('id');
+
+  useEffect(() => {
+    checkAuthAndLoadMemorial();
+  }, [memorialId]);
+
+  const checkAuthAndLoadMemorial = async () => {
+    try {
+      // Check if user is authenticated
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        // Store the intended destination for after login
+        const redirectPath = memorialId 
+          ? `/memorials/new?id=${memorialId}`
+          : '/memorials/new';
+        
+        router.push(`/auth/signin?redirect=${encodeURIComponent(redirectPath)}`);
+        return;
+      }
+
+      setIsAuthenticated(true);
+
+      // If there's an ID in search params, load the memorial
+      if (memorialId) {
+        const { data: memorial, error } = await supabase
+          .from('memorials')
+          .select('*')
+          .eq('id', memorialId)
+          .eq('user_id', session.user.id)
+          .single();
+
+        if (error) {
+          console.error('Error loading memorial:', error);
+          // If memorial doesn't exist or user doesn't own it, redirect to new memorial
+          router.push('/memorials/new');
+          return;
+        }
+
+        setMemorialData(memorial);
+      }
+    } catch (error) {
+      console.error('Error checking auth:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Not authenticated (this should rarely show as we redirect above)
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-8">
+          <div className="mb-6">
+            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Sign in Required
+          </h2>
+          <p className="text-gray-600 mb-6">
+            You need to sign in to create a memorial. It's quick and easy to get started.
+          </p>
+          <div className="space-y-3">
+            <Link href="/auth/signin?redirect=/memorials/new">
+              <Button variant="primary" className="w-full">
+                Sign In to Continue
+              </Button>
+            </Link>
+            <Link href="/auth/signup?redirect=/memorials/new">
+              <Button variant="secondary" className="w-full">
+                Create New Account
+              </Button>
+            </Link>
+          </div>
+          <p className="mt-6 text-sm text-gray-500">
+            Creating an account allows you to save your progress, manage your memorials, and receive important updates.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render the wizard
+  return (
+    <MemorialWizard 
+      memorialId={memorialId || undefined}
+      initialData={memorialData || undefined}
+    />
+  );
+}

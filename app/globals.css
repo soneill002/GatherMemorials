@@ -1,0 +1,185 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Catholic Theme Colors */
+    --color-marian: 0 48 135; /* #003087 */
+    --color-liturgical: 255 215 0; /* #FFD700 */
+    --color-vatican: 250 250 250; /* #FAFAFA */
+    
+    /* Font Variables */
+    --font-inter: 'Inter', system-ui, sans-serif;
+    --font-playfair: 'Playfair Display', Georgia, serif;
+  }
+
+  /* Base Typography */
+  body {
+    font-family: var(--font-inter);
+    font-feature-settings: 'kern' 1, 'liga' 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings with Serif Font */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-playfair);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  /* Focus Styles */
+  *:focus {
+    outline: 2px solid rgb(var(--color-marian) / 0.5);
+    outline-offset: 2px;
+  }
+
+  *:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: rgb(var(--color-marian) / 0.1);
+    color: rgb(var(--color-marian));
+  }
+}
+
+@layer components {
+  /* Button Base Styles */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-marian-500 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-primary {
+    @apply bg-marian-500 text-white hover:bg-marian-600 active:bg-marian-700;
+  }
+
+  .btn-secondary {
+    @apply bg-liturgical-500 text-vatican-900 hover:bg-liturgical-600 active:bg-liturgical-700;
+  }
+
+  .btn-ghost {
+    @apply hover:bg-vatican-100 text-vatican-700 hover:text-vatican-900;
+  }
+
+  /* Card Component */
+  .card {
+    @apply bg-white rounded-lg shadow-soft border border-vatican-200 p-6;
+  }
+
+  .card-hover {
+    @apply hover:shadow-lg transition-shadow duration-200;
+  }
+
+  /* Form Input Styles */
+  .input {
+    @apply w-full px-3 py-2 border border-vatican-300 rounded-md focus:ring-2 focus:ring-marian-500 focus:border-transparent transition-colors;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-vatican-700 mb-1;
+  }
+
+  /* Memorial Page Specific */
+  .memorial-hero {
+    @apply relative h-96 bg-gradient-to-b from-marian-500/10 to-transparent;
+  }
+
+  .prayer-card {
+    @apply bg-gradient-to-br from-vatican-50 to-marian-50 border border-marian-100 rounded-lg p-4;
+  }
+
+  /* Guestbook Entry */
+  .guestbook-entry {
+    @apply bg-white border-l-4 border-liturgical-500 p-4 my-4 shadow-sm hover:shadow-md transition-shadow;
+  }
+
+  /* Loading States */
+  .skeleton {
+    @apply animate-pulse bg-vatican-200 rounded;
+  }
+
+  .spinner {
+    @apply animate-spin rounded-full border-2 border-vatican-300 border-t-marian-500;
+  }
+}
+
+@layer utilities {
+  /* Text Gradient */
+  .text-gradient-holy {
+    @apply bg-gradient-to-r from-marian-500 to-liturgical-500 bg-clip-text text-transparent;
+  }
+
+  /* Scroll Smooth */
+  .scroll-smooth {
+    scroll-behavior: smooth;
+  }
+
+  /* Hide Scrollbar */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Catholic Ornament Border */
+  .border-ornament {
+    position: relative;
+  }
+
+  .border-ornament::before,
+  .border-ornament::after {
+    content: '✝';
+    position: absolute;
+    color: rgb(var(--color-liturgical));
+    font-size: 1.5rem;
+  }
+
+  .border-ornament::before {
+    left: -1rem;
+  }
+
+  .border-ornament::after {
+    right: -1rem;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    font-size: 12pt;
+  }
+
+  .memorial-content {
+    page-break-inside: avoid;
+  }
+}
+
+/* Custom Animations */
+@keyframes gentle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-gentle-pulse {
+  animation: gentle-pulse 4s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
