@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { ShareModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { Input } from '@/components/ui/Input';
+import { GuestbookForm } from '@/features/guestbook/components/GuestbookForm';
 import Link from 'next/link';
 import type { Memorial, GuestbookEntry, ServiceEvent } from '@/types/memorial';
 
@@ -32,7 +33,6 @@ export default function MemorialPage() {
   const [showLightbox, setShowLightbox] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [guestbookEntries, setGuestbookEntries] = useState<GuestbookEntry[]>([]);
-  const [showGuestbookForm, setShowGuestbookForm] = useState(false);
   const [isInPrayerList, setIsInPrayerList] = useState(false);
 
   useEffect(() => {
@@ -180,6 +180,18 @@ export default function MemorialPage() {
     } catch (error) {
       console.error('Error updating prayer list:', error);
       showError('Error', 'Could not update prayer list. Please try again.');
+    }
+  };
+
+  const handleGuestbookEntrySubmitted = () => {
+    // Reload guestbook entries after submission
+    loadGuestbookEntries();
+    
+    // Show success message if entry doesn't require moderation
+    if (memorial && !memorial.guestbook_settings?.moderated) {
+      setTimeout(() => {
+        loadGuestbookEntries();
+      }, 1000);
     }
   };
 
@@ -513,53 +525,81 @@ export default function MemorialPage() {
               </div>
             )}
 
-            {/* Guestbook Tab */}
+            {/* Guestbook Tab - UPDATED WITH GUESTBOOK FORM */}
             {activeTab === 'guestbook' && memorial.guestbook_settings?.enabled && (
               <div>
-                <div className="mb-6">
-                  <Button
-                    variant="primary"
-                    onClick={() => setShowGuestbookForm(true)}
-                  >
-                    Leave a Memory
-                  </Button>
+                {/* Guestbook Form Section */}
+                <div className="mb-8">
+                  <GuestbookForm
+                    memorialId={memorialId}
+                    memorialName={`${memorial.first_name} ${memorial.last_name}`}
+                    requiresModeration={memorial.guestbook_settings?.moderated || false}
+                    onEntrySubmitted={handleGuestbookEntrySubmitted}
+                  />
                 </div>
 
-                {guestbookEntries.length > 0 ? (
-                  <div className="space-y-4">
-                    {guestbookEntries.map((entry) => (
-                      <div key={entry.id} className="bg-gray-50 rounded-lg p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                            <span className="text-blue-600 font-semibold">
-                              {entry.author_name?.[0]?.toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium">{entry.author_name}</span>
-                              <span className="text-sm text-gray-500">
-                                {formatDate(entry.created_at)}
+                {/* Divider */}
+                <div className="border-t border-gray-200 my-8"></div>
+
+                {/* Guestbook Entries Section */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Messages & Memories
+                  </h3>
+                  
+                  {guestbookEntries.length > 0 ? (
+                    <div className="space-y-4">
+                      {guestbookEntries.map((entry) => (
+                        <div key={entry.id} className="bg-gray-50 rounded-lg p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                              <span className="text-blue-600 font-semibold">
+                                {entry.author_name?.[0]?.toUpperCase()}
                               </span>
                             </div>
-                            <p className="text-gray-700">{entry.message}</p>
-                            {entry.photo_url && (
-                              <img 
-                                src={entry.photo_url} 
-                                alt="Guestbook entry" 
-                                className="mt-3 rounded-lg max-w-xs"
-                              />
-                            )}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium text-gray-900">{entry.author_name}</span>
+                                <span className="text-sm text-gray-500">
+                                  {formatDate(entry.created_at)}
+                                </span>
+                              </div>
+                              <p className="text-gray-700 whitespace-pre-wrap">{entry.message}</p>
+                              {entry.photo_url && (
+                                <img 
+                                  src={entry.photo_url} 
+                                  alt="Shared memory" 
+                                  className="mt-3 rounded-lg max-w-xs cursor-pointer hover:opacity-95 transition-opacity"
+                                  onClick={() => {
+                                    // Could open in a lightbox
+                                    window.open(entry.photo_url, '_blank');
+                                  }}
+                                />
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500">No memories shared yet. Be the first to leave a memory.</p>
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 bg-gray-50 rounded-lg">
+                      <svg className="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      <p className="text-gray-500">No memories shared yet.</p>
+                      <p className="text-sm text-gray-400 mt-1">Be the first to leave a message above.</p>
+                    </div>
+                  )}
+
+                  {/* Load More Button (if needed in future) */}
+                  {guestbookEntries.length >= 20 && (
+                    <div className="mt-6 text-center">
+                      <Button variant="secondary" size="small">
+                        Load More Messages
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
