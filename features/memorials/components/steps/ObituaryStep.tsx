@@ -22,7 +22,14 @@ import {
   Heart,
   Church,
   Users,
-  Briefcase
+  Briefcase,
+  AlertCircle,
+  CheckCircle,
+  X,
+  Calendar,
+  MapPin,
+  GraduationCap,
+  Shield
 } from 'lucide-react';
 import { Memorial } from '@/types/memorial';
 import clsx from 'clsx';
@@ -35,57 +42,22 @@ interface ObituaryStepProps {
   errors?: Record<string, string>;
 }
 
-// AI Prompt templates for different approaches
-const aiPromptTemplates = [
-  {
-    id: 'traditional',
-    title: 'Traditional Catholic',
-    icon: Church,
-    description: 'Formal obituary with faith elements',
-    prompts: [
-      'Include their Catholic faith journey',
-      'Mention parish involvement',
-      'Add favorite prayers or saints',
-      'Include sacraments received'
-    ]
-  },
-  {
-    id: 'life-story',
-    title: 'Life Story',
-    icon: Heart,
-    description: 'Chronological life narrative',
-    prompts: [
-      'Where were they born and raised?',
-      'What was their education?',
-      'Career and accomplishments?',
-      'How did they meet their spouse?'
-    ]
-  },
-  {
-    id: 'family-focused',
-    title: 'Family Focused',
-    icon: Users,
-    description: 'Emphasize relationships',
-    prompts: [
-      'Role as parent/grandparent',
-      'Family traditions they started',
-      'Favorite family memories',
-      'Legacy for future generations'
-    ]
-  },
-  {
-    id: 'accomplishments',
-    title: 'Accomplishments',
-    icon: Briefcase,
-    description: 'Highlight achievements',
-    prompts: [
-      'Professional achievements',
-      'Community service',
-      'Hobbies and passions',
-      'Impact on others'
-    ]
-  }
-];
+interface AIFormData {
+  deceasedName: string;
+  dateOfBirth: string;
+  dateOfDeath: string;
+  placeOfBirth: string;
+  placeOfDeath: string;
+  occupation: string;
+  education: string;
+  militaryService: string;
+  hobbies: string;
+  survivedBy: string;
+  predeceased: string;
+  specialMemories: string;
+  tone: 'traditional' | 'celebratory' | 'simple' | 'detailed';
+  includeReligious: boolean;
+}
 
 // Example obituary snippets for inspiration
 const exampleSnippets = [
@@ -136,20 +108,45 @@ export function ObituaryStep({
 }: ObituaryStepProps) {
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
   const [showAIAssistant, setShowAIAssistant] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [aiResponses, setAiResponses] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
+  const [streamedContent, setStreamedContent] = useState('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiAvailable, setAiAvailable] = useState(true);
   const [showExamples, setShowExamples] = useState(false);
   const [wordCount, setWordCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const { showToast } = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // AI form state
+  const [aiFormData, setAiFormData] = useState<AIFormData>({
+    deceasedName: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
+    dateOfBirth: data.birthDate || '',
+    dateOfDeath: data.deathDate || '',
+    placeOfBirth: '',
+    placeOfDeath: '',
+    occupation: '',
+    education: '',
+    militaryService: '',
+    hobbies: '',
+    survivedBy: '',
+    predeceased: '',
+    specialMemories: '',
+    tone: 'traditional',
+    includeReligious: true
+  });
+
   // Calculate word count
   useEffect(() => {
     const words = (data.obituary || '').trim().split(/\s+/).filter(word => word.length > 0);
     setWordCount(words.length);
   }, [data.obituary]);
+
+  // Check AI availability on mount
+  useEffect(() => {
+    checkAIAvailability();
+  }, []);
 
   // Auto-save draft
   useEffect(() => {
@@ -162,6 +159,97 @@ export function ObituaryStep({
       return () => clearTimeout(timer);
     }
   }, [data.obituary]);
+
+  const checkAIAvailability = async () => {
+    try {
+      const response = await fetch('/api/ai/obituary', {
+        method: 'GET',
+        credentials: 'include'
+      });
+      const result = await response.json();
+      setAiAvailable(result.available);
+    } catch (error) {
+      setAiAvailable(false);
+    }
+  };
+
+  const handleGenerateObituary = async () => {
+    setIsGenerating(true);
+    setAiError(null);
+    setStreamedContent('');
+    setSuggestions([]);
+
+    try {
+      const response = await fetch('/api/ai/obituary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          ...aiFormData,
+          stream: true
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to generate obituary');
+      }
+
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        let accumulatedContent = '';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                if (data.done) {
+                  setSuggestions(data.suggestions || []);
+                } else if (data.content) {
+                  accumulatedContent += data.content;
+                  setStreamedContent(accumulatedContent);
+                }
+              } catch (e) {
+                console.error('Error parsing stream data:', e);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error generating obituary:', error);
+      setAiError(error instanceof Error ? error.message : 'Failed to generate obituary');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleAcceptAIContent = () => {
+    updateData({ obituary: streamedContent });
+    setShowAIAssistant(false);
+    setStreamedContent('');
+    showToast('AI obituary added! Feel free to edit and personalize.', 'success');
+  };
+
+  const handleAppendAIContent = () => {
+    const currentText = data.obituary || '';
+    updateData({ obituary: currentText ? `${currentText}\n\n${streamedContent}` : streamedContent });
+    setStreamedContent('');
+    showToast('AI content appended to obituary', 'success');
+  };
 
   // Validate the obituary
   const validate = (): boolean => {
@@ -231,37 +319,6 @@ export function ObituaryStep({
     }, 0);
   };
 
-  // Generate AI content (mock for now)
-  const handleGenerateAI = async () => {
-    if (!selectedTemplate) {
-      showToast('Please select a template first', 'warning');
-      return;
-    }
-
-    setIsGenerating(true);
-    
-    // Mock AI generation - replace with actual OpenAI API call
-    setTimeout(() => {
-      const template = aiPromptTemplates.find(t => t.id === selectedTemplate);
-      const mockObituary = `${data.firstName} ${data.lastName} passed away peacefully on ${data.deathDate}. 
-
-A devoted ${template?.title.toLowerCase()} individual, ${data.firstName} lived a life filled with love, faith, and dedication to family.
-
-Born on ${data.birthDate}, ${data.firstName} grew up with strong Catholic values that guided ${data.firstName === 'Mary' || data.firstName === 'Sarah' ? 'her' : 'his'} throughout life.
-
-[This is where the AI would generate personalized content based on your answers to the prompts]
-
-${data.firstName} is survived by loving family members and countless friends whose lives were touched by ${data.firstName === 'Mary' || data.firstName === 'Sarah' ? 'her' : 'his'} kindness and generosity.
-
-May ${data.firstName}'s soul and the souls of all the faithful departed, through the mercy of God, rest in peace. Amen.`;
-
-      updateData({ obituary: mockObituary });
-      setShowAIAssistant(false);
-      setIsGenerating(false);
-      showToast('AI obituary generated! Feel free to edit and personalize.', 'success');
-    }, 2000);
-  };
-
   // Insert example snippet
   const insertSnippet = (snippet: string) => {
     const personalized = snippet
@@ -307,14 +364,16 @@ May ${data.firstName}'s soul and the souls of all the faithful departed, through
 
       {/* AI Assistant Button */}
       <div className="flex flex-wrap gap-4">
-        <Button
-          type="button"
-          variant="primary"
-          onClick={() => setShowAIAssistant(true)}
-          icon={Sparkles}
-        >
-          Help me write this
-        </Button>
+        {aiAvailable && (
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => setShowAIAssistant(true)}
+            icon={Sparkles}
+          >
+            AI Writing Assistant
+          </Button>
+        )}
         
         <Button
           type="button"
@@ -455,102 +514,354 @@ May ${data.firstName}'s soul and the souls of all the faithful departed, through
       </Card>
 
       {/* AI Assistant Modal */}
-      <Modal
-        isOpen={showAIAssistant}
-        onClose={() => setShowAIAssistant(false)}
-        title="AI Obituary Assistant"
-        size="large"
-      >
-        <div className="space-y-6">
-          <p className="text-gray-600">
-            Choose a style and answer a few questions to generate a personalized obituary.
-          </p>
-          
-          {/* Template Selection */}
-          <div>
-            <h3 className="font-medium text-gray-900 mb-3">Select a Style:</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {aiPromptTemplates.map((template) => (
+      {showAIAssistant && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-xl font-serif">AI Obituary Assistant</h3>
+                </div>
                 <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => setSelectedTemplate(template.id)}
-                  className={clsx(
-                    "p-4 rounded-lg border-2 text-left transition-all",
-                    selectedTemplate === template.id
-                      ? "border-marianBlue bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300"
-                  )}
+                  onClick={() => {
+                    setShowAIAssistant(false);
+                    setStreamedContent('');
+                    setSuggestions([]);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
                 >
-                  <div className="flex items-start gap-3">
-                    <template.icon className="w-5 h-5 text-marianBlue mt-0.5" />
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">{template.title}</p>
-                      <p className="text-sm text-gray-500 mt-1">{template.description}</p>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {!isGenerating && !streamedContent && (
+                <>
+                  <p className="text-gray-600 mb-6">
+                    Provide information about your loved one and I'll help you write a meaningful obituary.
+                  </p>
+
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {/* Left column - Basic Information */}
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                        <Info className="h-4 w-4" />
+                        Basic Information
+                      </h4>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Full Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={aiFormData.deceasedName}
+                          onChange={(e) => setAiFormData({...aiFormData, deceasedName: e.target.value})}
+                          placeholder="John Michael Smith"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            Date of Birth
+                          </label>
+                          <input
+                            type="date"
+                            value={aiFormData.dateOfBirth}
+                            onChange={(e) => setAiFormData({...aiFormData, dateOfBirth: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            Date of Death
+                          </label>
+                          <input
+                            type="date"
+                            value={aiFormData.dateOfDeath}
+                            onChange={(e) => setAiFormData({...aiFormData, dateOfDeath: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          Place of Birth
+                        </label>
+                        <input
+                          type="text"
+                          value={aiFormData.placeOfBirth}
+                          onChange={(e) => setAiFormData({...aiFormData, placeOfBirth: e.target.value})}
+                          placeholder="Boston, Massachusetts"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          Place of Death
+                        </label>
+                        <input
+                          type="text"
+                          value={aiFormData.placeOfDeath}
+                          onChange={(e) => setAiFormData({...aiFormData, placeOfDeath: e.target.value})}
+                          placeholder="Philadelphia, Pennsylvania"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                          <Briefcase className="h-3 w-3" />
+                          Occupation/Career
+                        </label>
+                        <input
+                          type="text"
+                          value={aiFormData.occupation}
+                          onChange={(e) => setAiFormData({...aiFormData, occupation: e.target.value})}
+                          placeholder="Teacher, Engineer, Nurse..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                          <GraduationCap className="h-3 w-3" />
+                          Education
+                        </label>
+                        <input
+                          type="text"
+                          value={aiFormData.education}
+                          onChange={(e) => setAiFormData({...aiFormData, education: e.target.value})}
+                          placeholder="University of Pennsylvania, BS in Engineering"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Right column - Personal Information */}
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                        <Heart className="h-4 w-4" />
+                        Personal Details
+                      </h4>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                          <Users className="h-3 w-3" />
+                          Survived By
+                        </label>
+                        <textarea
+                          value={aiFormData.survivedBy}
+                          onChange={(e) => setAiFormData({...aiFormData, survivedBy: e.target.value})}
+                          rows={3}
+                          placeholder="Wife Mary, children John Jr. and Sarah, 5 grandchildren..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Predeceased By
+                        </label>
+                        <textarea
+                          value={aiFormData.predeceased}
+                          onChange={(e) => setAiFormData({...aiFormData, predeceased: e.target.value})}
+                          rows={2}
+                          placeholder="Parents William and Elizabeth, brother Thomas..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                          <Shield className="h-3 w-3" />
+                          Military Service
+                        </label>
+                        <input
+                          type="text"
+                          value={aiFormData.militaryService}
+                          onChange={(e) => setAiFormData({...aiFormData, militaryService: e.target.value})}
+                          placeholder="US Army, Vietnam War veteran..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Hobbies & Interests
+                        </label>
+                        <textarea
+                          value={aiFormData.hobbies}
+                          onChange={(e) => setAiFormData({...aiFormData, hobbies: e.target.value})}
+                          rows={2}
+                          placeholder="Gardening, woodworking, volunteering at church..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Special Memories & Qualities
+                        </label>
+                        <textarea
+                          value={aiFormData.specialMemories}
+                          onChange={(e) => setAiFormData({...aiFormData, specialMemories: e.target.value})}
+                          rows={3}
+                          placeholder="Known for his kindness, devoted to family, active in parish..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
                     </div>
                   </div>
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          {/* Prompts for selected template */}
-          {selectedTemplate && (
-            <div>
-              <h3 className="font-medium text-gray-900 mb-3">Tell us more:</h3>
-              <div className="space-y-4">
-                {aiPromptTemplates
-                  .find(t => t.id === selectedTemplate)
-                  ?.prompts.map((prompt, idx) => (
-                    <div key={idx}>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {prompt}
-                      </label>
-                      <Textarea
-                        value={aiResponses[prompt] || ''}
-                        onChange={(e) => setAiResponses({
-                          ...aiResponses,
-                          [prompt]: e.target.value
-                        })}
-                        rows={2}
-                        placeholder="Optional - leave blank to skip"
-                      />
+
+                  {/* Tone and Options */}
+                  <div className="mt-6 space-y-4 border-t pt-6">
+                    <div className="flex gap-6">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Writing Tone
+                        </label>
+                        <select
+                          value={aiFormData.tone}
+                          onChange={(e) => setAiFormData({...aiFormData, tone: e.target.value as any})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="traditional">Traditional & Formal</option>
+                          <option value="celebratory">Celebratory & Joyful</option>
+                          <option value="simple">Simple & Brief</option>
+                          <option value="detailed">Detailed & Comprehensive</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id="includeReligious"
+                          checked={aiFormData.includeReligious}
+                          onChange={(e) => setAiFormData({...aiFormData, includeReligious: e.target.checked})}
+                          className="h-4 w-4 text-blue-600 rounded"
+                        />
+                        <label htmlFor="includeReligious" className="text-sm text-gray-700 flex items-center gap-1">
+                          <Church className="h-4 w-4" />
+                          Include Catholic faith references
+                        </label>
+                      </div>
                     </div>
-                  ))}
-              </div>
-            </div>
-          )}
-          
-          {/* Action buttons */}
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setShowAIAssistant(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleGenerateAI}
-              disabled={!selectedTemplate || isGenerating}
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Generate Obituary
+                  </div>
                 </>
               )}
-            </Button>
+
+              {/* AI Error */}
+              {aiError && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-red-800">Error generating obituary</p>
+                    <p className="text-sm text-red-600 mt-1">{aiError}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Generated Content */}
+              {(isGenerating || streamedContent) && (
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center gap-2">
+                    {isGenerating && <Loader2 className="h-4 w-4 animate-spin" />}
+                    <h4 className="font-medium">Generated Obituary</h4>
+                  </div>
+                  
+                  <div className="p-4 bg-gray-50 rounded-lg min-h-[300px] whitespace-pre-wrap font-serif">
+                    {streamedContent || (
+                      <div className="flex items-center justify-center h-[300px] text-gray-400">
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Suggestions */}
+                  {suggestions.length > 0 && (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <h5 className="font-medium text-blue-900 mb-2">Suggestions for Improvement:</h5>
+                      <ul className="space-y-1">
+                        {suggestions.map((suggestion, index) => (
+                          <li key={index} className="text-sm text-blue-700 flex items-start gap-2">
+                            <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                            <span>{suggestion}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowAIAssistant(false);
+                    setStreamedContent('');
+                    setSuggestions([]);
+                    setAiError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                
+                {!streamedContent && (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleGenerateObituary}
+                    disabled={isGenerating || !aiFormData.deceasedName}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Generate Obituary
+                      </>
+                    )}
+                  </Button>
+                )}
+                
+                {streamedContent && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleAppendAIContent}
+                    >
+                      Add to Existing
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={handleAcceptAIContent}
+                    >
+                      Use This Obituary
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      </Modal>
+      )}
 
       {/* Navigation Buttons */}
       <div className="flex justify-between items-center pt-6 border-t">
