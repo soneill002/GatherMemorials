@@ -27,9 +27,11 @@ import {
   DollarSign,
   Loader2,
   CheckCircle,
-  ExternalLink
+  ExternalLink,
+  X
 } from 'lucide-react';
 import { Memorial, ServiceType, DonationType, PrivacySetting } from '@/types/memorial';
+import { useStripeCheckout } from '@/features/payments/hooks/useStripeCheckout';
 import clsx from 'clsx';
 
 interface ReviewStepProps {
@@ -127,11 +129,10 @@ export function ReviewStep({
   onEdit,
   errors = {}
 }: ReviewStepProps) {
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const { showToast } = useToast();
+  const { createCheckoutSession, isLoading } = useStripeCheckout();
 
   // Check if a section is complete
   const isSectionComplete = (section: typeof reviewSections[0]): boolean => {
@@ -168,7 +169,7 @@ export function ReviewStep({
     (reviewSections.filter(section => isSectionComplete(section)).length / reviewSections.length) * 100
   );
 
-  // Handle checkout
+  // Handle checkout with Stripe
   const handleCheckout = async () => {
     if (!isComplete) {
       showToast('Please complete all required sections before checkout', 'error');
@@ -180,23 +181,24 @@ export function ReviewStep({
       return;
     }
 
-    setShowPaymentModal(true);
-  };
+    if (!data.id) {
+      showToast('Memorial ID is missing. Please save your progress first.', 'error');
+      return;
+    }
 
-  // Process payment (mock - would integrate with Stripe)
-  const processPayment = async () => {
-    setIsProcessing(true);
-    
-    // Mock payment processing
-    setTimeout(() => {
-      setIsProcessing(false);
-      setShowPaymentModal(false);
-      updateData({ status: 'published', publishedAt: new Date().toISOString() });
-      showToast('Payment successful! Your memorial is now live.', 'success');
-      
-      // Redirect to success page
-      window.location.href = `/memorials/${data.customUrl}/success`;
-    }, 3000);
+    try {
+      // Use the Stripe checkout hook to create a session and redirect
+      await createCheckoutSession({
+        memorialId: data.id,
+        productId: 'memorial',
+        successUrl: `/memorials/${data.id}/success`,
+        cancelUrl: `/memorials/${data.id}/edit`
+      });
+      // The createCheckoutSession function will handle the redirect to Stripe
+    } catch (error) {
+      console.error('Checkout error:', error);
+      showToast('Failed to start checkout process. Please try again.', 'error');
+    }
   };
 
   // Get privacy icon
@@ -291,24 +293,24 @@ export function ReviewStep({
       {/* Review Sections */}
       <div className="space-y-4">
         {reviewSections.map((section) => {
-          const isComplete = isSectionComplete(section);
+          const isSectionComplete = isSectionComplete(section);
           const Icon = section.icon;
           
           return (
             <Card key={section.id} className={clsx(
               "transition-colors",
-              !isComplete && "bg-amber-50 border-amber-200"
+              !isSectionComplete && "bg-amber-50 border-amber-200"
             )}>
               <div className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4 flex-1">
                     <div className={clsx(
                       "p-2 rounded-lg",
-                      isComplete ? "bg-green-100" : "bg-amber-100"
+                      isSectionComplete ? "bg-green-100" : "bg-amber-100"
                     )}>
                       <Icon className={clsx(
                         "w-5 h-5",
-                        isComplete ? "text-green-600" : "text-amber-600"
+                        isSectionComplete ? "text-green-600" : "text-amber-600"
                       )} />
                     </div>
                     
@@ -317,7 +319,7 @@ export function ReviewStep({
                         <h3 className="font-medium text-gray-900">
                           {section.title}
                         </h3>
-                        {isComplete ? (
+                        {isSectionComplete ? (
                           <CheckCircle className="w-4 h-4 text-green-500" />
                         ) : (
                           <AlertCircle className="w-4 h-4 text-amber-500" />
@@ -388,7 +390,7 @@ export function ReviewStep({
                           </div>
                         )}
                         
-                        {!isComplete && (
+                        {!isSectionComplete && (
                           <p className="text-amber-600 font-medium mt-1">
                             This section needs to be completed
                           </p>
@@ -436,7 +438,7 @@ export function ReviewStep({
       </Card>
 
       {/* Pricing Card */}
-      <Card className="bg-gradient-to-r from-marianBlue to-blue-600 text-white">
+      <Card className="bg-gradient-to-r from-[#003087] to-blue-600 text-white">
         <div className="p-8">
           <div className="flex items-center justify-between">
             <div>
@@ -483,16 +485,16 @@ export function ReviewStep({
               type="checkbox"
               checked={agreedToTerms}
               onChange={(e) => setAgreedToTerms(e.target.checked)}
-              className="mt-1 w-4 h-4 text-marianBlue border-gray-300 rounded focus:ring-marianBlue"
+              className="mt-1 w-4 h-4 text-[#003087] border-gray-300 rounded focus:ring-[#003087]"
             />
             <div className="ml-3">
               <span className="text-sm text-gray-700">
                 I agree to the{' '}
-                <a href="/terms" target="_blank" className="text-marianBlue hover:underline">
+                <a href="/terms" target="_blank" className="text-[#003087] hover:underline">
                   Terms of Service
                 </a>
                 {' '}and{' '}
-                <a href="/privacy" target="_blank" className="text-marianBlue hover:underline">
+                <a href="/privacy" target="_blank" className="text-[#003087] hover:underline">
                   Privacy Policy
                 </a>
               </span>
@@ -532,91 +534,138 @@ export function ReviewStep({
           variant="primary"
           size="large"
           onClick={handleCheckout}
-          disabled={!isComplete || !agreedToTerms}
-          icon={CreditCard}
+          disabled={!isComplete || !agreedToTerms || isLoading}
+          icon={isLoading ? Loader2 : CreditCard}
+          className={isLoading ? 'cursor-wait' : ''}
         >
-          Proceed to Checkout
+          {isLoading ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              Redirecting to Checkout...
+            </>
+          ) : (
+            <>
+              <CreditCard className="w-5 h-5 mr-2" />
+              Proceed to Checkout • $149
+            </>
+          )}
         </Button>
       </div>
 
-      {/* Payment Modal (simplified - would use Stripe Elements) */}
-      <Modal
-        isOpen={showPaymentModal}
-        onClose={() => !isProcessing && setShowPaymentModal(false)}
-        title="Complete Your Purchase"
-        size="medium"
-      >
-        <div className="space-y-6">
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <div className="flex justify-between items-center">
-              <span className="font-medium text-gray-900">Memorial for {data.firstName} {data.lastName}</span>
-              <span className="font-bold text-lg">$149.00</span>
-            </div>
-          </div>
-
-          <div className="text-center py-8">
-            <p className="text-gray-600 mb-4">
-              You will be redirected to Stripe for secure payment processing
-            </p>
-            
-            {/* Mock Stripe payment form */}
-            <div className="bg-gray-100 p-8 rounded-lg">
-              <p className="text-sm text-gray-500">
-                [Stripe Checkout would appear here]
-              </p>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setShowPaymentModal(false)}
-              disabled={isProcessing}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              onClick={processPayment}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  Complete Payment
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Preview Modal (simplified) */}
+      {/* Preview Modal */}
       {showPreview && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4"
           onClick={() => setShowPreview(false)}
         >
-          <div className="bg-white rounded-lg max-w-4xl max-h-full overflow-auto p-8">
-            <div className="flex justify-between items-center mb-6">
+          <div 
+            className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b px-8 py-6 flex justify-between items-center">
               <h2 className="text-2xl font-semibold">Memorial Preview</h2>
               <button
                 onClick={() => setShowPreview(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="text-center py-12 text-gray-500">
-              [Full memorial preview would render here]
+            <div className="p-8">
+              {/* Memorial Preview Content */}
+              <div className="text-center mb-8">
+                {data.featuredImage && (
+                  <div className="w-32 h-32 mx-auto mb-6 rounded-full bg-gray-200 overflow-hidden">
+                    <img 
+                      src={data.featuredImage} 
+                      alt={`${data.firstName} ${data.lastName}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                
+                <h1 className="text-3xl font-serif text-gray-900 mb-2">
+                  {data.firstName} {data.middleName} {data.lastName}
+                  {data.nickname && (
+                    <span className="text-2xl text-gray-600"> "{data.nickname}"</span>
+                  )}
+                </h1>
+                
+                <p className="text-lg text-gray-600 mb-4">
+                  {formatDate(data.birthDate)} - {formatDate(data.deathDate)}
+                  {age !== null && (
+                    <span className="text-base ml-2">(Age {age})</span>
+                  )}
+                </p>
+                
+                {data.headline && (
+                  <p className="text-xl italic text-gray-700 mb-8 max-w-2xl mx-auto">
+                    "{data.headline}"
+                  </p>
+                )}
+              </div>
+
+              {/* Obituary Section */}
+              {data.obituary && (
+                <div className="max-w-3xl mx-auto mb-12">
+                  <h2 className="text-2xl font-semibold mb-4 text-center">Obituary</h2>
+                  <div className="prose prose-lg mx-auto text-gray-700 whitespace-pre-wrap">
+                    {data.obituary}
+                  </div>
+                </div>
+              )}
+
+              {/* Services Section */}
+              {data.services && data.services.length > 0 && (
+                <div className="max-w-3xl mx-auto mb-12">
+                  <h2 className="text-2xl font-semibold mb-4 text-center">Service Information</h2>
+                  <div className="space-y-4">
+                    {data.services.map((service, index) => (
+                      <Card key={index} className="p-4">
+                        <div className="flex items-start gap-4">
+                          <Church className="w-5 h-5 text-[#003087] mt-1" />
+                          <div className="flex-1">
+                            <h3 className="font-medium">{getServiceTypeLabel(service.type)}</h3>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {formatDate(service.date)} at {service.time}
+                            </p>
+                            <p className="text-sm text-gray-700 mt-1">{service.location}</p>
+                            {service.details && (
+                              <p className="text-sm text-gray-600 mt-2">{service.details}</p>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Gallery Preview */}
+              {data.gallery && data.gallery.length > 0 && (
+                <div className="max-w-3xl mx-auto mb-12">
+                  <h2 className="text-2xl font-semibold mb-4 text-center">Photo Gallery</h2>
+                  <div className="bg-gray-100 rounded-lg p-8 text-center text-gray-500">
+                    {data.gallery.length} photo(s) and video(s) will be displayed here
+                  </div>
+                </div>
+              )}
+
+              {/* Guestbook Preview */}
+              {data.guestbookEnabled && (
+                <div className="max-w-3xl mx-auto mb-12">
+                  <h2 className="text-2xl font-semibold mb-4 text-center">Guestbook</h2>
+                  <div className="bg-gray-100 rounded-lg p-8 text-center text-gray-500">
+                    Visitors will be able to leave condolences and memories here
+                    {data.guestbookModeration && (
+                      <p className="text-sm mt-2">
+                        (Entries will be {data.guestbookModeration === 'pre' ? 'reviewed before' : 'reviewed after'} posting)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

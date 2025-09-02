@@ -43,7 +43,7 @@ interface MemorialWizardProps {
 export function MemorialWizard({ memorialId: propMemorialId, initialData }: MemorialWizardProps) {
   const router = useRouter();
   const supabase = createClientComponentClient();
-  const { success, error: showError, warning, ToastContainer } = useToast();
+  const { showToast } = useToast();
   
   // Auto-save refs
   const autoSaveTimer = useRef<NodeJS.Timeout>();
@@ -67,15 +67,10 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
   const [memorialData, setMemorialData] = useState<Partial<Memorial>>({
     status: 'draft',
     privacy: 'public',
-    guestbook_settings: {
-      enabled: true,
-      moderation: 'pre',
-      notification_email: '',
-      notify_frequency: 'instant',
-      require_signin: true
-    },
+    guestbookEnabled: true,
+    guestbookModeration: 'pre',
     services: [],
-    photos: [],
+    gallery: [],
     ...initialData,
   });
 
@@ -142,11 +137,18 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
 
       const data = await response.json();
       setMemorialId(data.memorial_id);
+      
+      // Initialize memorial data with ID
+      setMemorialData(prev => ({
+        ...prev,
+        id: data.memorial_id
+      }));
+      
       router.replace(`/memorials/new?id=${data.memorial_id}`);
-      success('Memorial created', data.message);
+      showToast('Memorial created. Let\'s begin creating their tribute.', 'success');
     } catch (err) {
       console.error('Error creating memorial:', err);
-      showError('Failed to create memorial', 'Please try again');
+      showToast('Failed to create memorial. Please try again.', 'error');
       router.push('/account');
     } finally {
       setIsLoading(false);
@@ -169,20 +171,30 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
       const data = await response.json();
       
       // Transform API data to component format
-      const transformedData = {
-        ...data,
-        guestbook_settings: {
-          enabled: data.guestbook_enabled,
-          moderation: data.guestbook_moderation,
-          notification_email: data.guestbook_notify_email,
-          notify_frequency: data.guestbook_notify_frequency,
-          require_signin: true,
-        },
-        donation_info: data.donation_enabled ? {
-          type: data.donation_type,
-          url: data.donation_url,
-          description: data.donation_description,
-        } : undefined,
+      const transformedData: Partial<Memorial> = {
+        id: data.id,
+        firstName: data.first_name,
+        middleName: data.middle_name,
+        lastName: data.last_name,
+        nickname: data.nickname,
+        birthDate: data.date_of_birth,
+        deathDate: data.date_of_death,
+        birthPlace: data.birth_place,
+        deathPlace: data.death_place,
+        featuredImage: data.featured_photo,
+        coverPhoto: data.cover_photo,
+        headline: data.headline,
+        obituary: data.obituary,
+        services: data.services || [],
+        donationType: data.donation_type,
+        donationUrl: data.donation_url,
+        gallery: data.gallery || [],
+        guestbookEnabled: data.guestbook_enabled,
+        guestbookModeration: data.guestbook_moderation,
+        privacy: data.privacy,
+        password: data.password,
+        customUrl: data.custom_url,
+        status: data.status,
       };
       
       setMemorialData(transformedData);
@@ -197,7 +209,7 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
       }
     } catch (err) {
       console.error('Error loading memorial:', err);
-      showError('Failed to load memorial', 'Please try refreshing the page');
+      showToast('Failed to load memorial. Please try refreshing the page.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -261,7 +273,7 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
         const result = await response.json();
         if (result.success) {
           lastSavedData.current = JSON.stringify(memorialData);
-          setLastSaveTime(result.savedAt || new Date().toISOString());
+          setLastSaveTime(new Date().toLocaleTimeString());
         }
       }
     } catch (err) {
@@ -279,14 +291,16 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
     switch (step.id) {
       case 'basic-info':
         return {
-          firstName: memorialData.first_name,
-          middleName: memorialData.middle_name,
-          lastName: memorialData.last_name,
+          firstName: memorialData.firstName,
+          middleName: memorialData.middleName,
+          lastName: memorialData.lastName,
           nickname: memorialData.nickname,
-          dateOfBirth: memorialData.date_of_birth,
-          dateOfDeath: memorialData.date_of_death,
-          featuredPhotoUrl: memorialData.featured_photo,
-          coverPhotoUrl: memorialData.cover_photo,
+          dateOfBirth: memorialData.birthDate,
+          dateOfDeath: memorialData.deathDate,
+          birthPlace: memorialData.birthPlace,
+          deathPlace: memorialData.deathPlace,
+          featuredPhotoUrl: memorialData.featuredImage,
+          coverPhotoUrl: memorialData.coverPhoto,
         };
       case 'headline':
         return {
@@ -300,26 +314,21 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
         return memorialData.services || [];
       case 'donation':
         return {
-          donationEnabled: !!memorialData.donation_info,
-          donationType: memorialData.donation_info?.type,
-          donationUrl: memorialData.donation_info?.url,
-          donationDescription: memorialData.donation_info?.description,
+          donationType: memorialData.donationType,
+          donationUrl: memorialData.donationUrl,
         };
       case 'gallery':
-        return memorialData.photos || [];
+        return memorialData.gallery || [];
       case 'guestbook':
         return {
-          guestbookEnabled: memorialData.guestbook_settings?.enabled,
-          guestbookModeration: memorialData.guestbook_settings?.moderation,
-          guestbookNotifyEmail: memorialData.guestbook_settings?.notification_email,
-          guestbookNotifyFrequency: memorialData.guestbook_settings?.notify_frequency,
+          guestbookEnabled: memorialData.guestbookEnabled,
+          guestbookModeration: memorialData.guestbookModeration,
         };
       case 'privacy':
         return {
           privacy: memorialData.privacy,
           password: memorialData.password,
-          customUrl: memorialData.custom_url,
-          seoEnabled: memorialData.privacy === 'public',
+          customUrl: memorialData.customUrl,
         };
       default:
         return {};
@@ -334,31 +343,29 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
     try {
       // Prepare full update data
       const updateData = {
-        first_name: memorialData.first_name,
-        middle_name: memorialData.middle_name,
-        last_name: memorialData.last_name,
+        first_name: memorialData.firstName,
+        middle_name: memorialData.middleName,
+        last_name: memorialData.lastName,
         nickname: memorialData.nickname,
-        date_of_birth: memorialData.date_of_birth,
-        date_of_death: memorialData.date_of_death,
-        featured_photo: memorialData.featured_photo,
-        cover_photo: memorialData.cover_photo,
+        date_of_birth: memorialData.birthDate,
+        date_of_death: memorialData.deathDate,
+        birth_place: memorialData.birthPlace,
+        death_place: memorialData.deathPlace,
+        featured_photo: memorialData.featuredImage,
+        cover_photo: memorialData.coverPhoto,
         headline: memorialData.headline,
         obituary: memorialData.obituary,
-        donation_enabled: !!memorialData.donation_info,
-        donation_type: memorialData.donation_info?.type,
-        donation_url: memorialData.donation_info?.url,
-        donation_description: memorialData.donation_info?.description,
-        guestbook_enabled: memorialData.guestbook_settings?.enabled,
-        guestbook_moderation: memorialData.guestbook_settings?.moderation,
-        guestbook_notify_email: memorialData.guestbook_settings?.notification_email,
-        guestbook_notify_frequency: memorialData.guestbook_settings?.notify_frequency,
+        donation_type: memorialData.donationType,
+        donation_url: memorialData.donationUrl,
+        guestbook_enabled: memorialData.guestbookEnabled,
+        guestbook_moderation: memorialData.guestbookModeration,
         privacy: memorialData.privacy,
         password: memorialData.password,
-        custom_url: memorialData.custom_url,
+        custom_url: memorialData.customUrl,
         current_step: currentStep + 1,
         completed_steps: completedSteps.map(s => s + 1), // Convert to 1-based
         services: memorialData.services,
-        gallery: memorialData.photos,
+        gallery: memorialData.gallery,
       };
 
       const response = await fetch(`/api/memorials/${memorialId}`, {
@@ -376,42 +383,16 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
 
       const result = await response.json();
       lastSavedData.current = JSON.stringify(memorialData);
-      success('Memorial saved', result.message);
+      showToast('Memorial saved successfully', 'success');
+      return true;
     } catch (err) {
       console.error('Save error:', err);
-      showError('Failed to save memorial', err instanceof Error ? err.message : 'Please try again');
+      showToast('Failed to save memorial. Please try again.', 'error');
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
-
-  // Get save status periodically
-  useEffect(() => {
-    if (!memorialId) return;
-    
-    const checkSaveStatus = async () => {
-      try {
-        const response = await fetch(`/api/memorials/${memorialId}/autosave`, {
-          method: 'GET',
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setLastSaveTime(data.lastSavedDisplay || '');
-        }
-      } catch (err) {
-        // Silent fail
-      }
-    };
-    
-    // Check immediately
-    checkSaveStatus();
-    
-    // Then check every 30 seconds
-    const interval = setInterval(checkSaveStatus, 30000);
-    
-    return () => clearInterval(interval);
-  }, [memorialId]);
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = () => {
@@ -438,11 +419,10 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
     switch (step.id) {
       case 'basic-info':
         return !!(
-          memorialData.first_name &&
-          memorialData.last_name &&
-          memorialData.date_of_birth &&
-          memorialData.date_of_death &&
-          memorialData.featured_photo
+          memorialData.firstName &&
+          memorialData.lastName &&
+          memorialData.birthDate &&
+          memorialData.deathDate
         );
       case 'headline':
         return !!(memorialData.headline && memorialData.headline.length >= 10);
@@ -455,9 +435,9 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
       case 'gallery':
         return true; // Optional step
       case 'guestbook':
-        return memorialData.guestbook_settings?.enabled !== undefined;
+        return memorialData.guestbookEnabled !== undefined;
       case 'privacy':
-        return !!(memorialData.privacy && memorialData.custom_url);
+        return !!(memorialData.privacy);
       case 'review':
         // Check all required steps are complete
         return WIZARD_STEPS
@@ -476,7 +456,7 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
     if (stepIndex > currentStep) {
       const isValid = validateStep(currentStep);
       if (!isValid && WIZARD_STEPS[currentStep].required) {
-        warning('Please complete this step', 'Fill in all required fields before continuing');
+        showToast('Please complete all required fields before continuing', 'error');
         setErrorSteps([...errorSteps, currentStep]);
         return;
       }
@@ -517,6 +497,11 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
     }
   };
 
+  // Handle edit from review step
+  const handleEdit = (stepIndex: number) => {
+    goToStep(stepIndex);
+  };
+
   // Update memorial data
   const updateMemorialData = (stepData: Partial<Memorial>) => {
     setMemorialData(prev => ({
@@ -537,29 +522,17 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
   // Confirm exit with unsaved changes
   const confirmExit = async () => {
     // Save before exiting
-    await saveMemorial();
-    router.push('/account');
-  };
-
-  // Handle payment (final step)
-  const handleCheckout = async () => {
-    // Save memorial first
-    await saveMemorial();
-    
-    // TODO: Implement Stripe checkout
-    // For now, simulate checkout success
-    success('Redirecting to checkout...', 'Please wait');
-    
-    setTimeout(() => {
-      router.push(`/memorials/${memorialId}/success`);
-    }, 2000);
+    const saved = await saveMemorial();
+    if (saved) {
+      router.push('/account');
+    }
   };
 
   // Render current step component
   const renderStep = () => {
     const stepProps = {
       data: memorialData,
-      onChange: updateMemorialData,
+      updateData: updateMemorialData,
       onNext: handleNext,
       onPrevious: handlePrevious,
       isFirstStep: currentStep === 0,
@@ -586,10 +559,10 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
       case 'review':
         return (
           <ReviewStep 
-            {...stepProps}
-            onCheckout={handleCheckout}
-            completedSteps={completedSteps}
-            totalSteps={WIZARD_STEPS.length}
+            data={memorialData}
+            updateData={updateMemorialData}
+            onPrevious={handlePrevious}
+            onEdit={handleEdit}
           />
         );
       default:
@@ -600,11 +573,20 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
   // Render preview
   const renderPreview = () => {
     const calculateAge = () => {
-      if (!memorialData.date_of_birth || !memorialData.date_of_death) return null;
-      const birth = new Date(memorialData.date_of_birth);
-      const death = new Date(memorialData.date_of_death);
+      if (!memorialData.birthDate || !memorialData.deathDate) return null;
+      const birth = new Date(memorialData.birthDate);
+      const death = new Date(memorialData.deathDate);
       const age = Math.floor((death.getTime() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       return age;
+    };
+
+    const formatDate = (dateString?: string) => {
+      if (!dateString) return '';
+      return new Date(dateString).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
     };
 
     const age = calculateAge();
@@ -613,54 +595,59 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
       <div className="sticky top-4">
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
           {/* Cover Photo */}
-          {memorialData.cover_photo && (
-            <div className="h-48 bg-gradient-to-r from-blue-500 to-purple-600 relative">
+          <div className="h-48 bg-gradient-to-b from-[#003087] to-[#003087]/80 relative">
+            {memorialData.coverPhoto ? (
               <img 
-                src={memorialData.cover_photo} 
+                src={memorialData.coverPhoto} 
                 alt="Cover" 
                 className="w-full h-full object-cover opacity-90"
               />
-            </div>
-          )}
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="text-white/50">Cover photo will appear here</span>
+              </div>
+            )}
+          </div>
           
           {/* Featured Photo & Basic Info */}
           <div className="p-6 -mt-12 relative">
-            {memorialData.featured_photo && (
-              <div className="w-24 h-24 rounded-full border-4 border-white bg-white mb-4 overflow-hidden">
+            {memorialData.featuredImage ? (
+              <div className="w-24 h-24 rounded-full border-4 border-white bg-white mb-4 overflow-hidden shadow-md">
                 <img 
-                  src={memorialData.featured_photo} 
-                  alt={`${memorialData.first_name} ${memorialData.last_name}`}
+                  src={memorialData.featuredImage} 
+                  alt={`${memorialData.firstName} ${memorialData.lastName}`}
                   className="w-full h-full object-cover"
                 />
+              </div>
+            ) : (
+              <div className="w-24 h-24 rounded-full border-4 border-white bg-gray-200 mb-4 flex items-center justify-center shadow-md">
+                <span className="text-gray-400 text-xs">Photo</span>
               </div>
             )}
             
             <h2 className="text-2xl font-bold text-gray-900">
-              {memorialData.first_name} {memorialData.middle_name} {memorialData.last_name}
+              {memorialData.firstName || 'First'} {memorialData.middleName} {memorialData.lastName || 'Last'}
+              {memorialData.nickname && (
+                <span className="text-xl text-gray-600 ml-2">"{memorialData.nickname}"</span>
+              )}
             </h2>
             
-            {memorialData.nickname && (
-              <p className="text-gray-600 italic">"{memorialData.nickname}"</p>
+            {memorialData.birthDate && memorialData.deathDate && (
+              <p className="text-gray-600 mt-2">
+                {formatDate(memorialData.birthDate)} - {formatDate(memorialData.deathDate)}
+                {age !== null && ` • Age ${age}`}
+              </p>
             )}
             
-            {memorialData.date_of_birth && memorialData.date_of_death && (
-              <p className="text-gray-600 mt-2">
-                {new Date(memorialData.date_of_birth).toLocaleDateString('en-US', { 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })} - {new Date(memorialData.date_of_death).toLocaleDateString('en-US', { 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
-                {age && ` • Age ${age}`}
+            {memorialData.birthPlace && memorialData.deathPlace && (
+              <p className="text-sm text-gray-500 mt-1">
+                Born in {memorialData.birthPlace} • Passed in {memorialData.deathPlace}
               </p>
             )}
             
             {memorialData.headline && (
-              <p className="text-xl text-gray-700 mt-4 font-medium">
-                {memorialData.headline}
+              <p className="text-xl text-gray-700 mt-4 font-medium italic">
+                "{memorialData.headline}"
               </p>
             )}
             
@@ -679,21 +666,25 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
                 <div className="space-y-2">
                   {memorialData.services.slice(0, 2).map((service, index) => (
                     <div key={index} className="text-sm text-gray-600">
-                      <span className="font-medium">{service.type}:</span> {service.location}
+                      <span className="font-medium capitalize">{service.type}:</span> {service.location}
+                      <br />
+                      <span className="text-xs text-gray-500">
+                        {formatDate(service.date)} at {service.time}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
             
-            {memorialData.photos && memorialData.photos.length > 0 && (
+            {memorialData.gallery && memorialData.gallery.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-lg font-semibold mb-2">Gallery</h3>
                 <div className="grid grid-cols-3 gap-2">
-                  {memorialData.photos.slice(0, 6).map((photo, index) => (
+                  {memorialData.gallery.slice(0, 6).map((item, index) => (
                     <div key={index} className="aspect-square bg-gray-200 rounded overflow-hidden">
-                      {photo.type === 'image' ? (
-                        <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                      {item.type === 'photo' ? (
+                        <img src={item.url} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gray-100">
                           <span className="text-gray-400 text-xs">Video</span>
@@ -702,9 +693,9 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
                     </div>
                   ))}
                 </div>
-                {memorialData.photos.length > 6 && (
+                {memorialData.gallery.length > 6 && (
                   <p className="text-sm text-gray-500 mt-2">
-                    +{memorialData.photos.length - 6} more items
+                    +{memorialData.gallery.length - 6} more items
                   </p>
                 )}
               </div>
@@ -725,7 +716,7 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#003087] mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading memorial...</p>
         </div>
       </div>
@@ -739,7 +730,7 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <h1 className="text-xl font-semibold">
-              {memorialId ? 'Create Memorial' : 'Loading...'}
+              Create Memorial
             </h1>
             
             <div className="flex items-center gap-4">
@@ -752,7 +743,7 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
               
               {!isSaving && lastSaveTime && (
                 <span className="text-sm text-gray-500">
-                  Saved {lastSaveTime}
+                  Saved at {lastSaveTime}
                 </span>
               )}
               
@@ -824,12 +815,9 @@ export function MemorialWizard({ memorialId: propMemorialId, initialData }: Memo
         title="Save before leaving?"
         message="You have unsaved changes. Would you like to save them before exiting?"
         confirmText="Save & Exit"
-        cancelText="Exit without saving"
+        cancelText="Cancel"
         variant="warning"
       />
-
-      {/* Toast notifications */}
-      <ToastContainer position="top-right" />
     </div>
   );
 }
