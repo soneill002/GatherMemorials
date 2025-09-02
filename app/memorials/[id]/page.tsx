@@ -9,6 +9,7 @@ import { ShareModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { Input } from '@/components/ui/Input';
 import { GuestbookForm } from '@/features/guestbook/components/GuestbookForm';
+import GuestbookDisplay from '@/features/guestbook/components/GuestbookDisplay';
 import Link from 'next/link';
 import type { Memorial, GuestbookEntry, ServiceEvent } from '@/types/memorial';
 
@@ -33,6 +34,7 @@ export default function MemorialPage() {
   const [showLightbox, setShowLightbox] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [guestbookEntries, setGuestbookEntries] = useState<GuestbookEntry[]>([]);
+  const [isLoadingGuestbook, setIsLoadingGuestbook] = useState(false);
   const [isInPrayerList, setIsInPrayerList] = useState(false);
 
   useEffect(() => {
@@ -102,18 +104,41 @@ export default function MemorialPage() {
 
   const loadGuestbookEntries = async () => {
     try {
-      const { data, error } = await supabase
+      setIsLoadingGuestbook(true);
+      
+      // Load all entries, including pending ones if user is owner
+      const query = supabase
         .from('guestbook_entries')
-        .select('*')
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url
+          )
+        `)
         .eq('memorial_id', memorialId)
-        .eq('status', 'approved')
         .order('created_at', { ascending: false });
 
+      // If not owner, only show approved entries
+      if (!isOwner) {
+        query.eq('status', 'approved');
+      }
+
+      const { data, error } = await query;
+
       if (!error && data) {
-        setGuestbookEntries(data);
+        // Transform data to include profile info
+        const entriesWithProfiles = data.map(entry => ({
+          ...entry,
+          author_name: entry.author_name || entry.profiles?.full_name || 'Anonymous',
+          author_avatar: entry.profiles?.avatar_url
+        }));
+        setGuestbookEntries(entriesWithProfiles);
       }
     } catch (error) {
       console.error('Error loading guestbook:', error);
+    } finally {
+      setIsLoadingGuestbook(false);
     }
   };
 
@@ -189,9 +214,15 @@ export default function MemorialPage() {
     
     // Show success message if entry doesn't require moderation
     if (memorial && !memorial.guestbook_settings?.moderated) {
-      setTimeout(() => {
-        loadGuestbookEntries();
-      }, 1000);
+      success('Memory shared', 'Your message has been added to the guestbook');
+    }
+  };
+
+  const handleGuestbookEntryAdded = () => {
+    // Called when real-time update adds a new entry
+    // Optionally show a notification
+    if (!isOwner) {
+      success('New memory shared', 'Someone just added a new message to the guestbook');
     }
   };
 
@@ -287,6 +318,9 @@ export default function MemorialPage() {
   }
 
   const age = calculateAge();
+  const guestbookEntryCount = guestbookEntries.filter(e => 
+    !memorial.guestbook_settings?.moderated || e.status === 'approved'
+  ).length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -437,7 +471,7 @@ export default function MemorialPage() {
                       : 'border-transparent text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  Guestbook ({guestbookEntries.length})
+                  Guestbook ({guestbookEntryCount})
                 </button>
               )}
             </nav>
@@ -525,11 +559,11 @@ export default function MemorialPage() {
               </div>
             )}
 
-            {/* Guestbook Tab - UPDATED WITH GUESTBOOK FORM */}
+            {/* Guestbook Tab - FULLY UPDATED WITH NEW DISPLAY COMPONENT */}
             {activeTab === 'guestbook' && memorial.guestbook_settings?.enabled && (
-              <div>
+              <div className="space-y-6">
                 {/* Guestbook Form Section */}
-                <div className="mb-8">
+                <div>
                   <GuestbookForm
                     memorialId={memorialId}
                     memorialName={`${memorial.first_name} ${memorial.last_name}`}
@@ -539,67 +573,34 @@ export default function MemorialPage() {
                 </div>
 
                 {/* Divider */}
-                <div className="border-t border-gray-200 my-8"></div>
+                <div className="border-t-2 border-gray-200"></div>
 
-                {/* Guestbook Entries Section */}
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    Messages & Memories
-                  </h3>
-                  
-                  {guestbookEntries.length > 0 ? (
-                    <div className="space-y-4">
-                      {guestbookEntries.map((entry) => (
-                        <div key={entry.id} className="bg-gray-50 rounded-lg p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                              <span className="text-blue-600 font-semibold">
-                                {entry.author_name?.[0]?.toUpperCase()}
-                              </span>
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium text-gray-900">{entry.author_name}</span>
-                                <span className="text-sm text-gray-500">
-                                  {formatDate(entry.created_at)}
-                                </span>
-                              </div>
-                              <p className="text-gray-700 whitespace-pre-wrap">{entry.message}</p>
-                              {entry.photo_url && (
-                                <img 
-                                  src={entry.photo_url} 
-                                  alt="Shared memory" 
-                                  className="mt-3 rounded-lg max-w-xs cursor-pointer hover:opacity-95 transition-opacity"
-                                  onClick={() => {
-                                    // Could open in a lightbox
-                                    window.open(entry.photo_url, '_blank');
-                                  }}
-                                />
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 bg-gray-50 rounded-lg">
-                      <svg className="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                {/* Enhanced Guestbook Display */}
+                <GuestbookDisplay
+                  memorialId={memorialId}
+                  entries={guestbookEntries}
+                  isLoading={isLoadingGuestbook}
+                  showModerated={!isOwner} // Owners see all entries, visitors only see approved
+                  onEntryAdded={handleGuestbookEntryAdded}
+                />
+
+                {/* Moderation Notice for Owners */}
+                {isOwner && memorial.guestbook_settings?.moderated && (
+                  <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start">
+                      <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <p className="text-gray-500">No memories shared yet.</p>
-                      <p className="text-sm text-gray-400 mt-1">Be the first to leave a message above.</p>
+                      <div className="text-sm text-blue-800">
+                        <p className="font-medium mb-1">Moderation is enabled</p>
+                        <p>New entries require your approval before appearing publicly.</p>
+                        <Link href="/account/guestbook/pending" className="underline hover:no-underline mt-1 inline-block">
+                          Manage pending entries →
+                        </Link>
+                      </div>
                     </div>
-                  )}
-
-                  {/* Load More Button (if needed in future) */}
-                  {guestbookEntries.length >= 20 && (
-                    <div className="mt-6 text-center">
-                      <Button variant="secondary" size="small">
-                        Load More Messages
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -626,7 +627,7 @@ export default function MemorialPage() {
         <div className="mt-8 text-center text-sm text-gray-500 pb-8">
           <p>Memorial created with love on GatherMemorials</p>
           {memorial.privacy === 'public' && (
-            <p className="mt-1">Share this memorial: gathermemorials.com/{memorial.custom_url}</p>
+            <p className="mt-1">Share this memorial: gathermemorials.com/{memorial.custom_url || `memorials/${memorialId}`}</p>
           )}
         </div>
       </div>
@@ -639,6 +640,61 @@ export default function MemorialPage() {
           title={`${memorial.first_name} ${memorial.last_name}'s Memorial`}
           url={`${window.location.origin}/memorials/${memorialId}`}
         />
+      )}
+
+      {/* Lightbox Modal for Gallery */}
+      {showLightbox && memorial.photos && (
+        <Modal
+          isOpen={showLightbox}
+          onClose={() => setShowLightbox(false)}
+          title=""
+        >
+          <div className="relative">
+            {memorial.photos[lightboxIndex].type === 'image' ? (
+              <img
+                src={memorial.photos[lightboxIndex].url}
+                alt={memorial.photos[lightboxIndex].caption || 'Memorial photo'}
+                className="w-full h-auto max-h-[80vh] object-contain"
+              />
+            ) : (
+              <video
+                src={memorial.photos[lightboxIndex].url}
+                controls
+                className="w-full h-auto max-h-[80vh]"
+              />
+            )}
+            
+            {memorial.photos[lightboxIndex].caption && (
+              <p className="text-center mt-4 text-gray-700">
+                {memorial.photos[lightboxIndex].caption}
+              </p>
+            )}
+            
+            {/* Navigation arrows */}
+            {memorial.photos.length > 1 && (
+              <>
+                <button
+                  onClick={() => setLightboxIndex((prev) => 
+                    prev === 0 ? memorial.photos!.length - 1 : prev - 1
+                  )}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
+                  aria-label="Previous"
+                >
+                  ←
+                </button>
+                <button
+                  onClick={() => setLightboxIndex((prev) => 
+                    prev === memorial.photos!.length - 1 ? 0 : prev + 1
+                  )}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
+                  aria-label="Next"
+                >
+                  →
+                </button>
+              </>
+            )}
+          </div>
+        </Modal>
       )}
 
       {/* Toast Container */}
