@@ -22,7 +22,7 @@ export interface Toast {
   duration?: number;
   action?: {
     label: string;
-    onClick: () => void;
+    onClick: () => void; 
   };
 }
 
