@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { useToast } from '@/components/ui/Toast';
+import { toast } from 'react-hot-toast';
 import { 
   Globe, 
   Lock, 
@@ -116,7 +116,6 @@ export function PrivacyStep({
     images: false
   });
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
-  const { showToast } = useToast();
 
   // Generate suggested URL from name
   const generateSuggestedUrl = () => {
@@ -188,30 +187,34 @@ export function PrivacyStep({
       });
       onNext();
     } else {
-      showToast('Please complete all required fields', 'error');
+      toast.error('Please complete all required fields');
     }
   };
 
   const handlePrivacyChange = (value: PrivacySetting) => {
     setPrivacy(value);
     if (value === 'public') {
-      showToast('Memorial will be publicly visible and searchable', 'info');
+      toast('Memorial will be publicly visible and searchable', {
+        icon: '🌐',
+      });
     } else if (value === 'password') {
-      showToast('You\'ll need to share the password with visitors', 'warning');
+      toast('You will need to share the password with visitors', {
+        icon: '⚠️',
+      });
     }
   };
 
   const copyMemorialUrl = () => {
     const url = `https://gathermemorials.com/memorial/${customUrl}`;
     navigator.clipboard.writeText(url);
-    showToast('Memorial URL copied to clipboard', 'success');
+    toast.success('Memorial URL copied to clipboard');
   };
 
   const handleSuggestUrl = () => {
     const suggested = generateSuggestedUrl();
     if (suggested) {
       setCustomUrl(suggested);
-      showToast('Suggested URL generated', 'success');
+      toast.success('Suggested URL generated');
     }
   };
 
@@ -515,7 +518,9 @@ export function PrivacyStep({
               type="button"
               variant="secondary"
               icon={Eye}
-              onClick={() => showToast('Preview will open in the next step', 'info')}
+              onClick={() => toast('Preview will open in the next step', {
+                icon: 'ℹ️',
+              })}
             >
               Preview
             </Button>
