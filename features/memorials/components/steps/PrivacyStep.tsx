@@ -103,10 +103,11 @@ export function PrivacyStep({
   onPrevious,
   errors = {}
 }: PrivacyStepProps) {
+  // All state declarations - properly formatted
   const [privacy, setPrivacy] = useState<PrivacySetting>(data.privacy || 'private');
   const [password, setPassword] = useState(data.memorialPassword || '');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // Added missing setState
+  const [showPassword, setShowPassword] = useState(false);
   const [customUrl, setCustomUrl] = useState(data.customUrl || '');
   const [urlAvailable, setUrlAvailable] = useState<boolean | null>(null);
   const [checkingUrl, setCheckingUrl] = useState(false);
@@ -218,6 +219,7 @@ export function PrivacyStep({
     }
   };
 
+  // Main component render
   return (
     <div className="space-y-8">
       {/* Section Header */}
