@@ -11,7 +11,7 @@ interface ProgressBarProps {
   variant?: 'default' | 'success' | 'warning' | 'error';
   showLabel?: boolean;
   label?: string;
-  classNameําstring;
+  className?: string;
   animate?: boolean;
 }
 

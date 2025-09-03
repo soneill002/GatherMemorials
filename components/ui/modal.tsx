@@ -3,7 +3,7 @@
 import React, { Fragment, useEffect, useRef, ReactNode } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { clsx } from 'clsx';
-import Button from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Base Modal component props
