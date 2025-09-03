@@ -83,7 +83,7 @@ const privacyOptions = [
       'Complete control over who can view'
     ],
     warnings: [
-      'You'll need to share the password with visitors',
+      'You will need to share the password with visitors',
       'Some may have difficulty accessing'
     ]
   }
