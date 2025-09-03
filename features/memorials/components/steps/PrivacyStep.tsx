@@ -24,7 +24,7 @@ import {
   Share2
 } from 'lucide-react';
 import { Memorial, PrivacySetting } from '@/types/memorial';
-import clsx from 'clsx';
+import { clsx } from 'clsx';
 
 interface PrivacyStepProps {
   data: Memorial;
