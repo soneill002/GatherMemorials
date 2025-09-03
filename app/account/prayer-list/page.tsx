@@ -31,7 +31,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
-import { Toast } from '@/components/ui/Toast'
+import { useToast } from '@/components/ui/Toast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { supabase } from '@/lib/supabase/client'
 import { requireAuth } from '@/lib/auth'
@@ -81,6 +81,7 @@ type ExportFormat = 'txt' | 'csv' | 'json' | 'html'
 
 export default function PrayerListPage() {
   const router = useRouter()
+  const { success: showSuccess, error: showError, ToastContainer } = useToast()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [prayerList, setPrayerList] = useState<PrayerListItem[]>([])
@@ -88,9 +89,6 @@ export default function PrayerListPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [showRemoveModal, setShowRemoveModal] = useState(false)
   const [itemToRemove, setItemToRemove] = useState<PrayerListItem | null>(null)
-  const [showToast, setShowToast] = useState(false)
-  const [toastMessage, setToastMessage] = useState('')
-  const [toastType, setToastType] = useState<'success' | 'error'>('success')
   const [upcomingAnniversaries, setUpcomingAnniversaries] = useState<Anniversary[]>([])
   const [stats, setStats] = useState<PrayerListStats | null>(null)
   const [isRemoving, setIsRemoving] = useState(false)
@@ -144,9 +142,7 @@ export default function PrayerListPage() {
       setStats(data.stats || null)
     } catch (error) {
       console.error('Error loading prayer list:', error)
-      setToastMessage('Failed to load prayer list')
-      setToastType('error')
-      setShowToast(true)
+      showError('Failed to load prayer list')
     } finally {
       setLoading(false)
     }
@@ -192,16 +188,12 @@ export default function PrayerListPage() {
         })
       }
       
-      setToastMessage(`${data.memorial_name} removed from prayer list`)
-      setToastType('success')
-      setShowToast(true)
+      showSuccess(`${data.memorial_name} removed from prayer list`)
       setShowRemoveModal(false)
       setItemToRemove(null)
     } catch (error) {
       console.error('Error removing from prayer list:', error)
-      setToastMessage('Failed to remove from prayer list')
-      setToastType('error')
-      setShowToast(true)
+      showError('Failed to remove from prayer list')
     } finally {
       setIsRemoving(false)
     }
@@ -247,14 +239,10 @@ export default function PrayerListPage() {
       document.body.removeChild(a)
       window.URL.revokeObjectURL(url)
 
-      setToastMessage(`Prayer list exported as ${format.toUpperCase()}`)
-      setToastType('success')
-      setShowToast(true)
+      showSuccess(`Prayer list exported as ${format.toUpperCase()}`)
     } catch (error) {
       console.error('Error exporting prayer list:', error)
-      setToastMessage(error instanceof Error ? error.message : 'Failed to export prayer list')
-      setToastType('error')
-      setShowToast(true)
+      showError(error instanceof Error ? error.message : 'Failed to export prayer list')
     } finally {
       setIsExporting(false)
     }
@@ -657,14 +645,8 @@ export default function PrayerListPage() {
         </Modal>
       )}
 
-      {/* Toast Notification */}
-      {showToast && (
-        <Toast
-          message={toastMessage}
-          type={toastType}
-          onClose={() => setShowToast(false)}
-        />
-      )}
+      {/* Toast Notifications */}
+      <ToastContainer />
     </div>
   )
 }

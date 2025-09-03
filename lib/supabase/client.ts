@@ -1,4 +1,4 @@
-import { createBrowserClient } from '@supabase/ssr';
+import { createBrowserClient as createSupabaseBrowserClient } from '@supabase/ssr';
 import type { Database } from '@/types/database';
 
 // Environment variables validation
@@ -9,25 +9,47 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-// Create a Supabase client for browser/client-side usage
-export const supabase = createBrowserClient<Database>(
-  supabaseUrl,
-  supabaseAnonKey,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      flowType: 'pkce',
-      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-    },
-    global: {
-      headers: {
-        'x-application-name': 'gathermemorials',
+/**
+ * Create a new Supabase browser client instance
+ * This function creates a fresh client instance when needed
+ */
+export function createBrowserClient() {
+  return createSupabaseBrowserClient<Database>(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
       },
-    },
-  }
-);
+      global: {
+        headers: {
+          'x-application-name': 'gathermemorials',
+        },
+      },
+    }
+  );
+}
+
+/**
+ * Alias for createBrowserClient for backwards compatibility
+ */
+export const createClient = createBrowserClient;
+
+/**
+ * Create a server client (for backwards compatibility with API routes)
+ * Note: This is a stub - actual server clients should use @/lib/supabase/server
+ */
+export function createServerClient(cookieStore?: any) {
+  console.warn('createServerClient called from client.ts - consider using @/lib/supabase/server instead');
+  return createBrowserClient();
+}
+
+// Create a Supabase client for browser/client-side usage
+export const supabase = createBrowserClient();
 
 // Auth helper functions
 export const auth = {
@@ -135,7 +157,7 @@ export const db = {
           *,
           memorial_services (*),
           memorial_donations (*),
-          memorial_gallery (*)
+          memorial_media (*)
         `)
         .eq('id', memorialId)
         .single();
@@ -223,11 +245,11 @@ export const db = {
   prayerLists: {
     async add(userId: string, memorialId: string, notes?: string) {
       const { data, error } = await supabase
-        .from('prayer_lists')
+        .from('prayer_list')
         .insert({
           user_id: userId,
           memorial_id: memorialId,
-          personal_notes: notes,
+          notes: notes,
         })
         .select()
         .single();
@@ -236,7 +258,7 @@ export const db = {
 
     async remove(userId: string, memorialId: string) {
       const { error } = await supabase
-        .from('prayer_lists')
+        .from('prayer_list')
         .delete()
         .eq('user_id', userId)
         .eq('memorial_id', memorialId);
@@ -245,7 +267,7 @@ export const db = {
 
     async getByUser(userId: string) {
       const { data, error } = await supabase
-        .from('prayer_lists')
+        .from('prayer_list')
         .select(`
           *,
           memorials (
@@ -258,13 +280,13 @@ export const db = {
           )
         `)
         .eq('user_id', userId)
-        .order('added_date', { ascending: false });
+        .order('created_at', { ascending: false });
       return { data, error };
     },
 
     async check(userId: string, memorialId: string) {
       const { data, error } = await supabase
-        .from('prayer_lists')
+        .from('prayer_list')
         .select('id')
         .eq('user_id', userId)
         .eq('memorial_id', memorialId)
@@ -302,11 +324,11 @@ export const db = {
     },
   },
 
-  // Gallery
+  // Gallery/Media
   gallery: {
     async upload(memorialId: string, items: Record<string, any>[]) {
       const { data, error } = await supabase
-        .from('memorial_gallery')
+        .from('memorial_media')
         .insert(items.map(item => ({ ...item, memorial_id: memorialId })))
         .select();
       return { data, error };
@@ -314,7 +336,7 @@ export const db = {
 
     async delete(itemId: string) {
       const { error } = await supabase
-        .from('memorial_gallery')
+        .from('memorial_media')
         .delete()
         .eq('id', itemId);
       return { error };
@@ -323,7 +345,7 @@ export const db = {
     async reorder(items: { id: string; order_index: number }[]) {
       const updates = items.map(item => 
         supabase
-          .from('memorial_gallery')
+          .from('memorial_media')
           .update({ order_index: item.order_index })
           .eq('id', item.id)
       );

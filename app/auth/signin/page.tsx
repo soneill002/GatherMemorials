@@ -4,7 +4,7 @@ import { useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
-import Button from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 
 interface SignInFormData {
   email: string;

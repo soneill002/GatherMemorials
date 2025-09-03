@@ -1,6 +1,7 @@
 import { createServerClient as createSupabaseServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
+import type { Database } from '@/types/database';
 
 /**
  * Create a Supabase client for server-side operations (App Router)
@@ -9,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export function createServerClient() {
   const cookieStore = cookies();
 
-  return createSupabaseServerClient(
+  return createSupabaseServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -41,6 +42,12 @@ export function createServerClient() {
 }
 
 /**
+ * Alias for createServerClient - used by API routes that import { createClient }
+ * This maintains backwards compatibility with existing code
+ */
+export const createClient = createServerClient;
+
+/**
  * Create a Supabase client for middleware operations
  */
 export function createMiddlewareClient(request: NextRequest) {
@@ -50,7 +57,7 @@ export function createMiddlewareClient(request: NextRequest) {
     },
   });
 
-  const supabase = createSupabaseServerClient(
+  const supabase = createSupabaseServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -108,7 +115,7 @@ export function createAdminClient() {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set');
   }
 
-  return createSupabaseServerClient(
+  return createSupabaseServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
