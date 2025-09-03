@@ -106,7 +106,7 @@ export function PrivacyStep({
   const [privacy, setPrivacy] = useState<PrivacySetting>(data.privacy || 'private');
   const [password, setPassword] = useState(data.memorialPassword || '');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // Added missing setState
   const [customUrl, setCustomUrl] = useState(data.customUrl || '');
   const [urlAvailable, setUrlAvailable] = useState<boolean | null>(null);
   const [checkingUrl, setCheckingUrl] = useState(false);
@@ -448,6 +448,7 @@ export function PrivacyStep({
             </div>
           </div>
         </Card>
+      )}
 
       {/* SEO Settings (if public) */}
       {privacy === 'public' && (
