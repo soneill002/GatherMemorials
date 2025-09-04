@@ -34,7 +34,7 @@ import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { supabase } from '@/lib/supabase/client'
-import { requireAuth } from '@/lib/auth'
+import { auth } from '@/lib/auth'  // Changed from requireAuth to auth
 import type { Memorial } from '@/types/memorial'
 import type { User } from '@/types/user'
 
@@ -100,19 +100,14 @@ export default function PrayerListPage() {
     checkAuth()
   }, [])
 
-  useEffect(() => {
-    if (user) {
-      loadPrayerList()
-    }
-  }, [user])
-
   const checkAuth = async () => {
-    const user = await requireAuth()
-    if (!user) {
+    const currentUser = await auth.getUser()  // Changed to use auth.getUser()
+    if (!currentUser) {
       router.push('/auth/signin?redirect=/account/prayer-list')
       return
     }
-    setUser(user)
+    setUser(currentUser as any)  // Type cast as User type might differ slightly
+    loadPrayerList()  // Load prayer list immediately after auth check
   }
 
   const loadPrayerList = async () => {
