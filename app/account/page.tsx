@@ -362,7 +362,11 @@ export default function AccountDashboard() {
                   ]}
                   selectedTab={activeTab}
                   onChange={(tab) => setActiveTab(tab as 'all' | 'published' | 'draft')}
-                />
+                >
+                  <div></div>
+                  <div></div>
+                  <div></div>
+                </Tabs>
                 
                 <div className="flex items-center gap-2">
                   <button

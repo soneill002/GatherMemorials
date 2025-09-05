@@ -1,7 +1,7 @@
 // app/api/memorials/[id]/autosave/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/client';
-import { Memorial, MemorialStatus } from '@/types/memorial';
+import { Memorial } from '@/types/memorial';
 
 /**
  * Auto-save endpoint for memorial wizard
@@ -82,7 +82,7 @@ export async function POST(
     }
 
     // Don't auto-save published memorials (they should use the regular update)
-    if (memorial.status === MemorialStatus.PUBLISHED) {
+    if (memorial.status === 'published') {
       return NextResponse.json(
         { 
           success: false,
@@ -163,59 +163,53 @@ export async function POST(
         if (stepData.password !== undefined) updates.password = stepData.password;
         if (stepData.customUrl !== undefined) updates.custom_url = stepData.customUrl;
         if (stepData.seoEnabled !== undefined) updates.seo_enabled = stepData.seoEnabled;
-        if (stepData.includeInSearchResults !== undefined) updates.include_in_search_results = stepData.includeInSearchResults;
         break;
 
-      case 9: // Review - No specific fields
-        // Just update the current step
+      case 9: // Review
+        // No specific fields for review step
         break;
-
-      default:
-        return NextResponse.json(
-          { error: 'Invalid step' },
-          { status: 400 }
-        );
     }
 
-    // Update completed steps if this step is marked as completed
+    // Handle completed step tracking
     if (completed) {
-      const { data: currentData } = await supabase
-        .from('memorials')
-        .select('completed_steps')
-        .eq('id', memorialId)
-        .single();
-
-      const completedSteps = currentData?.completed_steps || [];
+      const completedSteps = memorial.completed_steps || [];
       if (!completedSteps.includes(step)) {
         completedSteps.push(step);
-        completedSteps.sort((a: number, b: number) => a - b);
         updates.completed_steps = completedSteps;
       }
     }
 
-    // Only update if there are actual changes
-    if (Object.keys(updates).length > 1) { // More than just last_saved_at
+    // Only update if there are actual changes (beyond timestamps)
+    const hasChanges = Object.keys(updates).length > 2; // More than just timestamps
+    
+    if (hasChanges) {
+      // Record save time for rate limiting
+      recentSaves.set(lastSaveKey, now);
+
+      // Perform the update
       const { error: updateError } = await supabase
         .from('memorials')
         .update(updates)
         .eq('id', memorialId);
 
       if (updateError) {
-        console.error('Auto-save error:', updateError);
+        console.error('Auto-save update error:', updateError);
         return NextResponse.json(
-          { error: 'Failed to auto-save' },
+          { 
+            success: false,
+            message: 'Failed to save changes',
+            retry: true
+          },
           { status: 500 }
         );
       }
 
-      // Update rate limit tracker
-      recentSaves.set(lastSaveKey, now);
-
       return NextResponse.json({
         success: true,
-        savedAt: updates.last_saved_at,
+        message: 'Changes saved',
         step,
-        message: 'Auto-saved successfully'
+        savedAt: updates.last_saved_at,
+        hasChanges: true
       });
     }
 
