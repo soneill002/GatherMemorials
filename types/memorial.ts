@@ -259,3 +259,6 @@ export const DONATION_TYPE_LABELS = {
   parish: 'Parish/Church',
   other: 'Other',
 } as const;
+
+// Re-export MemorialStatus from database types
+export { type MemorialStatus } from '@/types/database';

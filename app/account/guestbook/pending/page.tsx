@@ -67,10 +67,12 @@ export default function PendingGuestbookPage() {
 
       if (!memorialsData || memorialsData.length === 0) {
         setError('No memorials found. Create a memorial first to manage its guestbook.');
+        setMemorials([]);
         setLoading(false);
         return;
       }
 
+      // TypeScript now knows memorialsData has at least one item
       setMemorials(memorialsData);
       setSelectedMemorialId(memorialsData[0].id);
       setLoading(false);
