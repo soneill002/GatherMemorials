@@ -10,7 +10,6 @@ import { ConfirmModal } from '@/components/ui/Modal';
 import { Tabs } from '@/components/ui/Tabs';
 import Link from 'next/link';
 import type { Memorial, GuestbookEntry } from '@/types/memorial';
-import type { User } from '@/types/user';
 
 interface DashboardStats {
   totalMemorials: number;
@@ -26,7 +25,7 @@ export default function AccountDashboard() {
   const { success, error: showError, ToastContainer } = useToast();
 
   // State
-  const [user, setUser] = useState<User | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalMemorials: 0,
@@ -55,7 +54,7 @@ export default function AccountDashboard() {
         return;
       }
 
-      setUser(session.user as User);
+      setUserId(session.user.id);
       await Promise.all([
         loadMemorials(session.user.id),
         loadStats(session.user.id),
