@@ -1,7 +1,7 @@
 // app/api/memorials/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/client';
-import { Memorial, MemorialStatus, MemorialService, GalleryItem } from '@/types/memorial';
+import { Memorial, MemorialService, GalleryItem } from '@/types/memorial';
 
 /**
  * GET /api/memorials/[id]
@@ -49,7 +49,7 @@ export async function GET(
     // Handle privacy restrictions
     if (!isOwner) {
       // Check if memorial is published
-      if (memorial.status !== MemorialStatus.PUBLISHED) {
+      if (memorial.status !== 'published') {
         return NextResponse.json(
           { error: 'This memorial is not yet published.' },
           { status: 403 }
@@ -361,11 +361,11 @@ export async function DELETE(
     }
 
     // For published memorials, perform soft delete
-    if (memorial.status === MemorialStatus.PUBLISHED) {
+    if (memorial.status === 'published') {
       const { error: updateError } = await supabase
         .from('memorials')
         .update({
-          status: MemorialStatus.DELETED,
+          status: 'deleted', // Note: You'll need to add 'deleted' to your database enum if not already present
           deleted_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })

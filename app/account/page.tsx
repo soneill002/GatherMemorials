@@ -360,7 +360,7 @@ export default function AccountDashboard() {
                     { id: 'published', label: `Published (${memorials.filter(m => m.status === 'published').length})` },
                     { id: 'draft', label: `Drafts (${memorials.filter(m => m.status === 'draft').length})` }
                   ]}
-                  activeTab={activeTab}
+                  selectedTab={activeTab}
                   onChange={(tab) => setActiveTab(tab as 'all' | 'published' | 'draft')}
                 />
                 
