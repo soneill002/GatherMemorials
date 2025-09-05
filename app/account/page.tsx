@@ -147,33 +147,6 @@ export default function AccountDashboard() {
     }
   };
 
-  const handleDuplicateMemorial = async (memorial: Memorial) => {
-    try {
-      const { data: newMemorial, error } = await supabase
-        .from('memorials')
-        .insert({
-          ...memorial,
-          id: undefined,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          status: 'draft',
-          custom_url: `${memorial.custom_url}-copy`,
-          first_name: memorial.first_name,
-          last_name: memorial.last_name
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      success('Memorial duplicated', 'A copy has been created as a draft');
-      router.push(`/memorials/new?id=${newMemorial.id}`);
-    } catch (error) {
-      console.error('Error duplicating memorial:', error);
-      showError('Duplication failed', 'Could not duplicate the memorial');
-    }
-  };
-
   const filteredMemorials = memorials.filter(memorial => {
     if (activeTab === 'published') return memorial.status === 'published';
     if (activeTab === 'draft') return memorial.status === 'draft';
