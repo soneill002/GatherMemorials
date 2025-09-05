@@ -25,7 +25,6 @@ export default function AccountDashboard() {
   const { success, error: showError, ToastContainer } = useToast();
 
   // State
-  const [userId, setUserId] = useState<string | null>(null);
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalMemorials: 0,
@@ -54,7 +53,6 @@ export default function AccountDashboard() {
         return;
       }
 
-      setUserId(session.user.id);
       await Promise.all([
         loadMemorials(session.user.id),
         loadStats(session.user.id),
