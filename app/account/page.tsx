@@ -23,7 +23,7 @@ interface DashboardStats {
 export default function AccountDashboard() {
   const router = useRouter();
   const supabase = createClientComponentClient();
-  const { success, error: showError, warning, ToastContainer } = useToast();
+  const { success, error: showError, ToastContainer } = useToast();
 
   // State
   const [user, setUser] = useState<User | null>(null);
