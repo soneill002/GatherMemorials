@@ -1,6 +1,6 @@
 'use client';
-export const dynamic = 'force-dynamic';
-import { useState, FormEvent, useEffect } from 'react';
+
+import { Suspense, useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
@@ -24,7 +24,8 @@ interface FormErrors {
   general?: string;
 }
 
-export default function ResetPasswordPage() {
+// Move the main component logic to a separate component that uses useSearchParams
+function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [stage, setStage] = useState<ResetStage>('request');
@@ -486,5 +487,27 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Main export wraps the component in Suspense
+export default function ResetPasswordPage() {
+  return (
+    <Suspense 
+      fallback={
+        <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+          <div className="sm:mx-auto sm:w-full sm:max-w-md">
+            <div className="bg-white py-8 px-4 shadow-lg sm:rounded-lg sm:px-10 border border-gray-100">
+              <div className="flex justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+              <p className="mt-4 text-center text-sm text-gray-600">Loading...</p>
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <ResetPasswordForm />
+    </Suspense>
   );
 }

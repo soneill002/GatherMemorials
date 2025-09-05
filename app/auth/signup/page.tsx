@@ -1,5 +1,5 @@
 'use client';
-export const dynamic = 'force-dynamic';
+
 import { useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -416,7 +416,7 @@ export default function SignUpPage() {
 
         {/* Footer Text */}
         <p className="mt-8 text-center text-xs text-gray-500">
-          By creating an account, you'll be able to create and manage memorial tributes,
+          By creating an account, you&apos;ll be able to create and manage memorial tributes,
           add loved ones to your prayer list, and participate in our community.
         </p>
       </div>
