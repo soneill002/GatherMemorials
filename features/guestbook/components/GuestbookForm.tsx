@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { Toast } from '@/components/ui/Toast';
+import { useToast } from '@/components/ui/Toast';
 import { 
   MessageSquare, 
   User, 
@@ -48,6 +48,7 @@ export function GuestbookForm({
 }: GuestbookFormProps) {
   const router = useRouter();
   const supabase = createClientComponentClient();
+  const { success: toastSuccess, error: toastError, ToastContainer } = useToast();
   
   // Form state
   const [message, setMessage] = useState('');
@@ -58,9 +59,6 @@ export function GuestbookForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
-  const [showSuccessToast, setShowSuccessToast] = useState(false);
-  const [showErrorToast, setShowErrorToast] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
@@ -76,9 +74,9 @@ export function GuestbookForm({
   const charactersRemaining = MAX_MESSAGE_LENGTH - message.length;
   
   // Check authentication on mount
-  useState(() => {
+  useEffect(() => {
     checkAuth();
-  });
+  }, []);
   
   async function checkAuth() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -178,15 +176,13 @@ export function GuestbookForm({
     if (file) {
       // Validate file size (5MB max)
       if (file.size > 5 * 1024 * 1024) {
-        setErrorMessage('Photo must be less than 5MB');
-        setShowErrorToast(true);
+        toastError('Invalid file', 'Photo must be less than 5MB');
         return;
       }
       
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        setErrorMessage('Please select an image file');
-        setShowErrorToast(true);
+        toastError('Invalid file', 'Please select an image file');
         return;
       }
       
@@ -217,14 +213,12 @@ export function GuestbookForm({
     
     // Validate message
     if (!message.trim()) {
-      setErrorMessage('Please enter a message');
-      setShowErrorToast(true);
+      toastError('Message required', 'Please enter a message');
       return;
     }
     
     if (message.length > MAX_MESSAGE_LENGTH) {
-      setErrorMessage(`Message must be less than ${MAX_MESSAGE_LENGTH} characters`);
-      setShowErrorToast(true);
+      toastError('Message too long', `Message must be less than ${MAX_MESSAGE_LENGTH} characters`);
       return;
     }
     
@@ -269,7 +263,11 @@ export function GuestbookForm({
       setPhotoPreview(null);
       
       // Show success message
-      setShowSuccessToast(true);
+      if (requiresModeration) {
+        toastSuccess('Submitted for review', 'Your message will appear once approved.');
+      } else {
+        toastSuccess('Message posted!', 'Your message has been posted successfully.');
+      }
       
       // Notify parent component
       if (onEntrySubmitted) {
@@ -284,8 +282,7 @@ export function GuestbookForm({
       }
     } catch (error: any) {
       console.error('Error submitting guestbook entry:', error);
-      setErrorMessage('Failed to submit your message. Please try again.');
-      setShowErrorToast(true);
+      toastError('Submission failed', 'Failed to submit your message. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -558,26 +555,8 @@ export function GuestbookForm({
         </form>
       </Modal>
       
-      {/* Success Toast */}
-      <Toast
-        isVisible={showSuccessToast}
-        onClose={() => setShowSuccessToast(false)}
-        message={
-          requiresModeration
-            ? 'Your message has been submitted for review. It will appear once approved.'
-            : 'Your message has been posted successfully!'
-        }
-        type="success"
-        icon={requiresModeration ? <AlertCircle className="w-5 h-5" /> : <Check className="w-5 h-5" />}
-      />
-      
-      {/* Error Toast */}
-      <Toast
-        isVisible={showErrorToast}
-        onClose={() => setShowErrorToast(false)}
-        message={errorMessage}
-        type="error"
-      />
+      {/* Toast Container for notifications */}
+      <ToastContainer />
       
       {/* Catholic Prayer (optional footer) */}
       <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
