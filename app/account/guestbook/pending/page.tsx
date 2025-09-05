@@ -65,6 +65,7 @@ export default function PendingGuestbookPage() {
 
       if (memorialsError) throw memorialsError;
 
+      // Check if memorials exist and handle appropriately
       if (!memorialsData || memorialsData.length === 0) {
         setError('No memorials found. Create a memorial first to manage its guestbook.');
         setMemorials([]);
@@ -72,9 +73,10 @@ export default function PendingGuestbookPage() {
         return;
       }
 
-      // TypeScript now knows memorialsData has at least one item
-      setMemorials(memorialsData);
-      setSelectedMemorialId(memorialsData[0].id);
+      // Cast to Memorial[] type since we know the structure
+      const typedMemorials = memorialsData as unknown as Memorial[];
+      setMemorials(typedMemorials);
+      setSelectedMemorialId(typedMemorials[0].id);
       setLoading(false);
     } catch (err) {
       console.error('Error loading data:', err);
