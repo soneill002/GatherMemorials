@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { Tabs } from '@/components/ui/Tabs';
 import Link from 'next/link';
-import type { Memorial, GuestbookEntry } from '@/types/memorial';
+import type { Memorial } from '@/types/memorial';
 
 interface DashboardStats {
   totalMemorials: number;
@@ -37,7 +37,6 @@ export default function AccountDashboard() {
   const [activeTab, setActiveTab] = useState<'all' | 'published' | 'draft'>('all');
   const [selectedMemorial, setSelectedMemorial] = useState<Memorial | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [pendingEntries, setPendingEntries] = useState<GuestbookEntry[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
@@ -55,8 +54,7 @@ export default function AccountDashboard() {
 
       await Promise.all([
         loadMemorials(session.user.id),
-        loadStats(session.user.id),
-        loadPendingGuestbookEntries(session.user.id)
+        loadStats(session.user.id)
       ]);
     } catch (error) {
       console.error('Error checking auth:', error);
@@ -125,35 +123,6 @@ export default function AccountDashboard() {
       });
     } catch (error) {
       console.error('Error loading stats:', error);
-    }
-  };
-
-  const loadPendingGuestbookEntries = async (userId: string) => {
-    try {
-      // Get user's memorials first
-      const { data: userMemorials } = await supabase
-        .from('memorials')
-        .select('id')
-        .eq('user_id', userId);
-
-      if (!userMemorials || userMemorials.length === 0) return;
-
-      const memorialIds = userMemorials.map(m => m.id);
-
-      // Load pending entries
-      const { data, error } = await supabase
-        .from('guestbook_entries')
-        .select('*, memorial:memorials(first_name, last_name)')
-        .in('memorial_id', memorialIds)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (!error && data) {
-        setPendingEntries(data);
-      }
-    } catch (error) {
-      console.error('Error loading pending entries:', error);
     }
   };
 
