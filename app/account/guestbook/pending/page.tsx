@@ -21,6 +21,10 @@ interface ModerationStats {
   total: number;
 }
 
+interface GuestbookEntryStatus {
+  status: 'pending' | 'approved' | 'rejected';
+}
+
 export default function PendingGuestbookPage() {
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [selectedMemorialId, setSelectedMemorialId] = useState<string>('');
@@ -96,7 +100,10 @@ export default function PendingGuestbookPage() {
 
       if (error) throw error;
 
-      const stats = data.reduce((acc, entry) => {
+      // Cast data to the correct type
+      const entries = (data || []) as GuestbookEntryStatus[];
+      
+      const stats = entries.reduce((acc, entry) => {
         acc.total++;
         if (entry.status === 'pending') acc.pending++;
         else if (entry.status === 'approved') acc.approved++;
