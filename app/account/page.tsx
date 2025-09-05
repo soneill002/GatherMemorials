@@ -202,7 +202,7 @@ export default function AccountDashboard() {
               <p className="mt-1 text-gray-600">Manage and monitor your memorial pages</p>
             </div>
             <Link href="/memorials/new">
-              <Button variant="primary" size="large">
+              <Button variant="primary" size="lg">
                 Create New Memorial
               </Button>
             </Link>
