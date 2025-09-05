@@ -396,16 +396,32 @@ export default function AccountDashboard() {
                 {filteredMemorials.map((memorial) => (
                   <MemorialCard
                     key={memorial.id}
-                    memorial={memorial}
-                    viewMode={viewMode}
-                    onView={() => router.push(`/memorials/${memorial.id}`)}
+                    memorial={{
+                      id: memorial.id,
+                      name: `${memorial.first_name} ${memorial.last_name}`,
+                      dates: {
+                        birth: memorial.date_of_birth,
+                        death: memorial.date_of_death
+                      },
+                      imageUrl: memorial.featured_image_url || undefined,
+                      coverPhotoUrl: memorial.cover_photo_url || undefined,
+                      headline: memorial.headline || undefined,
+                      privacy: memorial.privacy_setting || 'private',
+                      isPublished: memorial.status === 'published',
+                      createdAt: memorial.created_at
+                    }}
+                    variant={viewMode}
+                    showActions={true}
                     onEdit={() => router.push(`/memorials/new?id=${memorial.id}`)}
                     onDelete={() => {
                       setSelectedMemorial(memorial);
                       setShowDeleteModal(true);
                     }}
-                    onDuplicate={() => handleDuplicateMemorial(memorial)}
-                    showStats={true}
+                    onShare={() => {
+                      // Share functionality can be implemented later
+                      navigator.clipboard.writeText(`${window.location.origin}/memorials/${memorial.id}`);
+                      success('Link copied!', 'Memorial link copied to clipboard');
+                    }}
                   />
                 ))}
               </div>
