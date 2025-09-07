@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 
@@ -27,7 +27,9 @@ interface FormErrors {
 
 export default function SignUpPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [formData, setFormData] = useState<SignUpFormData>({
     email: '',
     password: '',
@@ -98,6 +100,7 @@ export default function SignUpPage() {
 
     setLoading(true);
     setErrors({});
+    setSuccessMessage('');
 
     try {
       const supabase = createBrowserClient();
@@ -111,12 +114,13 @@ export default function SignUpPage() {
             first_name: formData.firstName.trim(),
             last_name: formData.lastName.trim(),
           },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
       if (authError) {
         if (authError.message.includes('already registered')) {
-          setErrors({ email: 'This email is already registered' });
+          setErrors({ email: 'This email is already registered. Please sign in instead.' });
         } else {
           setErrors({ general: authError.message });
         }
@@ -137,6 +141,7 @@ export default function SignUpPage() {
           first_name: formData.firstName.trim(),
           last_name: formData.lastName.trim(),
           full_name: `${formData.firstName.trim()} ${formData.lastName.trim()}`,
+          created_at: new Date().toISOString(),
         });
 
       if (profileError) {
@@ -144,13 +149,33 @@ export default function SignUpPage() {
         // Don't show this error to user, profile will be created on first sign-in if needed
       }
 
-      // Check if email confirmation is required
-      if (authData.user.identities && authData.user.identities.length === 0) {
-        // Email confirmation required
-        router.push('/auth/verify-email?email=' + encodeURIComponent(formData.email));
+      // Check if the user's email is already confirmed
+      if (authData.user.confirmed_at) {
+        // Email is already confirmed (this happens in development or with certain Supabase settings)
+        // Automatically sign them in
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
+
+        if (!signInError && signInData.session) {
+          // Successfully signed in, redirect to the intended page or dashboard
+          const redirectTo = searchParams.get('redirect') || '/account';
+          router.push(redirectTo);
+        } else {
+          // Could not auto sign-in, redirect to sign-in page
+          router.push('/auth/signin?registered=true');
+        }
       } else {
-        // No confirmation required, redirect to dashboard
-        router.push('/account');
+        // Email confirmation is required
+        setSuccessMessage(
+          'Account created successfully! Please check your email to verify your account. You should receive a confirmation email within a few minutes.'
+        );
+        
+        // Optionally redirect to a verification page after a delay
+        setTimeout(() => {
+          router.push(`/auth/verify-email?email=${encodeURIComponent(formData.email)}`);
+        }, 5000);
       }
     } catch (error) {
       console.error('Signup error:', error);
@@ -173,11 +198,13 @@ export default function SignUpPage() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* Logo/Header */}
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-marian-blue">
-            <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
-            </svg>
-          </div>
+          <Link href="/">
+            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-marian-blue cursor-pointer hover:bg-blue-700 transition-colors">
+              <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
+              </svg>
+            </div>
+          </Link>
           <h2 className="mt-6 text-3xl font-serif font-bold text-gray-900">
             Create your account
           </h2>
@@ -189,6 +216,13 @@ export default function SignUpPage() {
         {/* Sign Up Form */}
         <div className="mt-8 bg-white py-8 px-4 shadow-lg sm:rounded-lg sm:px-10 border border-gray-100">
           <form className="space-y-6" onSubmit={handleSubmit}>
+            {/* Success Message */}
+            {successMessage && (
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md text-sm">
+                {successMessage}
+              </div>
+            )}
+
             {/* General Error */}
             {errors.general && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
@@ -385,7 +419,7 @@ export default function SignUpPage() {
                 variant="primary"
                 size="large"
                 loading={loading}
-                disabled={loading}
+                disabled={loading || !!successMessage}
                 className="w-full"
               >
                 {loading ? 'Creating account...' : 'Create Account'}
