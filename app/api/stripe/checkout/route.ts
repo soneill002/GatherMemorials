@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { stripe, MEMORIAL_PRODUCT } from '@/lib/stripe/client';
+import { getStripe, MEMORIAL_PRODUCT } from '@/lib/stripe/server'; // Changed to server
 import type { Database } from '@/types/database';
 
 export async function POST(request: NextRequest) {
   try {
+    // Get Stripe instance
+    const stripe = getStripe();
+    
+    if (!stripe) {
+      return NextResponse.json(
+        { error: 'Payment processing is not configured' },
+        { status: 503 }
+      );
+    }
+
     // Parse request body
     const { memorialId } = await request.json();
 
@@ -110,6 +120,16 @@ export async function POST(request: NextRequest) {
 // Retrieve session status (for success page)
 export async function GET(request: NextRequest) {
   try {
+    // Get Stripe instance
+    const stripe = getStripe();
+    
+    if (!stripe) {
+      return NextResponse.json(
+        { error: 'Payment processing is not configured' },
+        { status: 503 }
+      );
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const sessionId = searchParams.get('session_id');
 

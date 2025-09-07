@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stripe } from '@/lib/stripe/client';
+import { getStripe } from '@/lib/stripe/server'; // Changed from client to server
 import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
+    // Get Stripe instance
+    const stripe = getStripe();
+    
+    if (!stripe) {
+      return NextResponse.json(
+        { error: 'Payment processing is not configured' },
+        { status: 503 }
+      );
+    }
+
     const { sessionId, memorialId } = await request.json();
 
     if (!sessionId || !memorialId) {

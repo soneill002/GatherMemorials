@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { stripe } from '@/lib/stripe/client';
+import { getStripe } from '@/lib/stripe/server'; // Changed from client to server
 import { createClient } from '@supabase/supabase-js';
 import type { Stripe } from 'stripe';
 
@@ -20,6 +20,16 @@ const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
 export async function POST(request: NextRequest) {
   try {
+    // Get Stripe instance
+    const stripe = getStripe();
+    
+    if (!stripe) {
+      return NextResponse.json(
+        { error: 'Payment processing is not configured' },
+        { status: 503 }
+      );
+    }
+
     const body = await request.text();
     const signature = headers().get('stripe-signature')!;
 

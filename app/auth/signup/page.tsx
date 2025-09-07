@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
@@ -25,7 +25,7 @@ interface FormErrors {
   general?: string;
 }
 
-export default function SignUpPage() {
+function SignUpForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -455,5 +455,17 @@ export default function SignUpPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-marian-blue"></div>
+      </div>
+    }>
+      <SignUpForm />
+    </Suspense>
   );
 }
