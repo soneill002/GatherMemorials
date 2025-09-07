@@ -67,50 +67,56 @@ export default function RootLayout({
         <nav className="border-b border-vatican-200 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16 items-center">
-              <div className="flex-shrink-0 flex items-center">
-                {/* Clickable Logo */}
-                <Link 
-                  href="/" 
-                  className="font-serif text-2xl text-marian-500 hover:text-marian-600 transition-colors duration-200"
-                >
-                  GatherMemorials
-                </Link>
-              </div>
-              <div className="hidden sm:flex sm:items-center sm:space-x-4">
-                <Link 
-                  href="/" 
-                  className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
-                >
-                  Home
-                </Link>
-                <Link 
-                  href="/how-it-works" 
-                  className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
-                >
-                  How It Works
-                </Link>
-                <Link 
-                  href="/pricing" 
-                  className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
-                >
-                  Pricing
-                </Link>
-                <div className="flex items-center space-x-3 ml-4">
+              {/* Left side - Logo and Nav Links */}
+              <div className="flex items-center space-x-8">
+                <div className="flex-shrink-0">
+                  {/* Clickable Logo */}
                   <Link 
-                    href="/auth/signin" 
-                    className="text-vatican-700 hover:text-marian-500 px-4 py-2 text-sm font-medium transition-colors duration-200 border border-vatican-300 rounded-md hover:border-marian-500"
+                    href="/" 
+                    className="font-serif text-2xl text-marian-500 hover:text-marian-600 transition-colors duration-200"
                   >
-                    Log In
+                    GatherMemorials
+                  </Link>
+                </div>
+                <div className="hidden sm:flex sm:space-x-8">
+                  <Link 
+                    href="/" 
+                    className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
+                  >
+                    Home
                   </Link>
                   <Link 
-                    href="/auth/signup" 
-                    className="bg-marian-500 text-white hover:bg-marian-600 px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200"
+                    href="/how-it-works" 
+                    className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
                   >
-                    Sign Up
+                    How It Works
+                  </Link>
+                  <Link 
+                    href="/pricing" 
+                    className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
+                  >
+                    Pricing
                   </Link>
                 </div>
               </div>
-              {/* Mobile menu button (for future implementation) */}
+
+              {/* Right side - Auth Buttons */}
+              <div className="hidden sm:flex sm:items-center sm:space-x-3">
+                <Link 
+                  href="/auth/signin" 
+                  className="text-vatican-700 hover:text-marian-500 px-4 py-2 text-sm font-medium transition-colors duration-200 border border-vatican-300 rounded-md hover:border-marian-500"
+                >
+                  Log In
+                </Link>
+                <Link 
+                  href="/auth/signup" 
+                  className="bg-marian-500 text-white hover:bg-marian-600 px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200"
+                >
+                  Sign Up
+                </Link>
+              </div>
+
+              {/* Mobile menu button */}
               <div className="sm:hidden">
                 <button 
                   type="button" 
