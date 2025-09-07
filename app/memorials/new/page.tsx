@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { MemorialWizard } from '@/features/memorials/components/MemorialWizard';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 
-export default function NewMemorialPage() {
+// Move the main component logic to a separate component that uses useSearchParams
+function NewMemorialForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClientComponentClient();
@@ -90,7 +91,7 @@ export default function NewMemorialPage() {
             Sign in Required
           </h2>
           <p className="text-gray-600 mb-6">
-            You need to sign in to create a memorial. It's quick and easy to get started.
+            You need to sign in to create a memorial. It&apos;s quick and easy to get started.
           </p>
           <div className="space-y-3">
             <Link href="/auth/signin?redirect=/memorials/new">
@@ -118,5 +119,23 @@ export default function NewMemorialPage() {
       memorialId={memorialId || undefined}
       initialData={memorialData || undefined}
     />
+  );
+}
+
+// Main export wraps the component in Suspense
+export default function NewMemorialPage() {
+  return (
+    <Suspense 
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading memorial wizard...</p>
+          </div>
+        </div>
+      }
+    >
+      <NewMemorialForm />
+    </Suspense>
   );
 }
