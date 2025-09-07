@@ -28,12 +28,9 @@ export default function NewMemorialPage() {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
-        // Store the intended destination for after login
-        const redirectPath = memorialId 
-          ? `/memorials/new?id=${memorialId}`
-          : '/memorials/new';
-        
-        router.push(`/auth/signin?redirect=${encodeURIComponent(redirectPath)}`);
+        // Just set the auth state, don't redirect
+        setIsAuthenticated(false);
+        setIsLoading(false);
         return;
       }
 
@@ -59,6 +56,7 @@ export default function NewMemorialPage() {
       }
     } catch (error) {
       console.error('Error checking auth:', error);
+      setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
     }
@@ -76,8 +74,12 @@ export default function NewMemorialPage() {
     );
   }
 
-  // Not authenticated (this should rarely show as we redirect above)
+  // Not authenticated - show the custom authentication UI
   if (!isAuthenticated) {
+    const redirectPath = memorialId 
+      ? `/memorials/new?id=${memorialId}`
+      : '/memorials/new';
+
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-8">
@@ -93,12 +95,12 @@ export default function NewMemorialPage() {
             You need to sign in to create a memorial. It's quick and easy to get started.
           </p>
           <div className="space-y-3">
-            <Link href="/auth/signin?redirect=/memorials/new">
+            <Link href={`/auth/signin?redirect=${encodeURIComponent(redirectPath)}`}>
               <Button variant="primary" className="w-full">
                 Sign In to Continue
               </Button>
             </Link>
-            <Link href="/auth/signup?redirect=/memorials/new">
+            <Link href={`/auth/signup?redirect=${encodeURIComponent(redirectPath)}`}>
               <Button variant="secondary" className="w-full">
                 Create New Account
               </Button>
