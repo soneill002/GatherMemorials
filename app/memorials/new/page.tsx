@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { MemorialWizard } from '@/features/memorials/components/MemorialWizard';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 
-export default function NewMemorialPage() {
+function NewMemorialContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClientComponentClient();
@@ -120,5 +120,26 @@ export default function NewMemorialPage() {
       memorialId={memorialId || undefined}
       initialData={memorialData || undefined}
     />
+  );
+}
+
+// Loading fallback component
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+// Main export with Suspense wrapper
+export default function NewMemorialPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <NewMemorialContent />
+    </Suspense>
   );
 }
