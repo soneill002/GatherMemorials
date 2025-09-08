@@ -3,7 +3,7 @@
 import { Suspense, useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createBrowserClient } from '@/lib/supabase/client';
+import { createBrowserClient, clearAuthData } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 
 interface SignInFormData {
@@ -34,6 +34,9 @@ function SignInForm() {
 
   // Check for redirect parameter or success messages
   useEffect(() => {
+    // Clear any corrupted auth data on mount
+    clearAuthData();
+    
     const verified = searchParams.get('verified');
     const reset = searchParams.get('reset');
     const registered = searchParams.get('registered');
@@ -82,15 +85,11 @@ function SignInForm() {
     setSuccessMessage('');
 
     try {
+      // Create a fresh client instance
       const supabase = createBrowserClient();
 
-      // Clear any corrupted session data first
-      try {
-        await supabase.auth.signOut();
-      } catch (e) {
-        // Ignore sign out errors
-        console.log('Clearing session');
-      }
+      // Clear any existing session first (scope: 'local' only clears this browser)
+      await supabase.auth.signOut({ scope: 'local' });
 
       // Sign in the user
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -100,6 +99,7 @@ function SignInForm() {
 
       if (error) {
         console.error('Sign in error:', error);
+        
         if (error.message.includes('Invalid login credentials')) {
           setErrors({ general: 'Invalid email or password. Please try again.' });
         } else if (error.message.includes('Email not confirmed')) {
@@ -123,7 +123,38 @@ function SignInForm() {
         return;
       }
 
-      // Wait a moment for session to be established
+      // Verify the session was set properly
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.error('Session not persisted after login');
+        setErrors({ general: 'Session error. Please try again or clear your browser cache.' });
+        setLoading(false);
+        return;
+      }
+
+      // Check if profile exists, create if not (for users who signed up before profile creation)
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+
+      if (profileError && profileError.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        const metadata = data.user.user_metadata || {};
+        await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,
+            email: data.user.email,
+            first_name: metadata.first_name || '',
+            last_name: metadata.last_name || '',
+            full_name: metadata.full_name || `${metadata.first_name || ''} ${metadata.last_name || ''}`.trim(),
+          });
+      }
+
+      // Wait a moment for session to propagate
       await new Promise(resolve => setTimeout(resolve, 500));
 
       // Get redirect URL or default to account
@@ -145,6 +176,12 @@ function SignInForm() {
     if (errors[field as keyof FormErrors]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
+  };
+
+  // Add a manual clear cache button for troubleshooting
+  const handleClearCache = () => {
+    clearAuthData();
+    window.location.reload();
   };
 
   return (
@@ -180,7 +217,18 @@ function SignInForm() {
             {/* General Error */}
             {errors.general && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
-                {errors.general}
+                <div className="flex justify-between items-start">
+                  <span>{errors.general}</span>
+                  {errors.general.includes('cache') && (
+                    <button
+                      type="button"
+                      onClick={handleClearCache}
+                      className="ml-2 text-xs underline hover:no-underline"
+                    >
+                      Clear cache
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -346,6 +394,19 @@ function SignInForm() {
             Secure connection • Your data is encrypted and protected
           </p>
         </div>
+
+        {/* Troubleshooting Link (only shown in development) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={handleClearCache}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Having trouble? Clear auth cache
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

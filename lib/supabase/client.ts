@@ -10,6 +10,42 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 /**
+ * Helper to clear corrupted auth data
+ */
+export function clearAuthData() {
+  if (typeof window === 'undefined') return;
+  
+  // Clear all potential auth-related keys
+  const keysToRemove = [
+    'gathermemorials-auth-token',
+    'sb-auth-token',
+    'supabase.auth.token',
+    `sb-${supabaseUrl}-auth-token`,
+  ];
+  
+  keysToRemove.forEach(key => {
+    try {
+      window.localStorage.removeItem(key);
+      window.sessionStorage.removeItem(key);
+    } catch (error) {
+      console.error('Error clearing auth data:', error);
+    }
+  });
+  
+  // Also clear any cookies with auth data
+  if (typeof document !== 'undefined') {
+    document.cookie.split(';').forEach(cookie => {
+      const eqPos = cookie.indexOf('=');
+      const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+      if (name.includes('auth') || name.includes('supabase') || name.includes('sb-')) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname}`;
+      }
+    });
+  }
+}
+
+/**
  * Create a new Supabase browser client instance
  * This function creates a fresh client instance when needed
  */
@@ -23,7 +59,54 @@ export function createBrowserClient() {
         autoRefreshToken: true,
         detectSessionInUrl: true,
         flowType: 'pkce',
-        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        storageKey: `sb-${supabaseUrl}-auth-token`,
+        storage: {
+          getItem: (key: string) => {
+            if (typeof window === 'undefined') return null;
+            try {
+              const item = window.localStorage.getItem(key);
+              // Handle corrupted data
+              if (item) {
+                // Check if it's malformed (starts with base64- prefix)
+                if (item.startsWith('base64-')) {
+                  console.warn('Corrupted auth data detected, clearing...');
+                  window.localStorage.removeItem(key);
+                  return null;
+                }
+                // Try to parse to verify it's valid JSON
+                try {
+                  JSON.parse(item);
+                  return item;
+                } catch {
+                  console.warn('Invalid JSON in auth storage, clearing...');
+                  window.localStorage.removeItem(key);
+                  return null;
+                }
+              }
+              return item;
+            } catch (error) {
+              console.error('Error reading from localStorage:', error);
+              window.localStorage.removeItem(key);
+              return null;
+            }
+          },
+          setItem: (key: string, value: string) => {
+            if (typeof window === 'undefined') return;
+            try {
+              window.localStorage.setItem(key, value);
+            } catch (error) {
+              console.error('Error writing to localStorage:', error);
+            }
+          },
+          removeItem: (key: string) => {
+            if (typeof window === 'undefined') return;
+            try {
+              window.localStorage.removeItem(key);
+            } catch (error) {
+              console.error('Error removing from localStorage:', error);
+            }
+          },
+        },
       },
       global: {
         headers: {
