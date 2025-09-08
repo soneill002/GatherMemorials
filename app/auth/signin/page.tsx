@@ -36,17 +36,17 @@ function SignInForm() {
   useEffect(() => {
     const verified = searchParams.get('verified');
     const reset = searchParams.get('reset');
-    const redirect = searchParams.get('redirect');
+    const registered = searchParams.get('registered');
+    const error = searchParams.get('error');
     
     if (verified === 'true') {
       setSuccessMessage('Email verified successfully! You can now sign in.');
     } else if (reset === 'true') {
       setSuccessMessage('Password reset successfully! You can now sign in with your new password.');
-    }
-    
-    // Store redirect URL for after login
-    if (redirect) {
-      sessionStorage.setItem('redirectAfterLogin', redirect);
+    } else if (registered === 'true') {
+      setSuccessMessage('Account created successfully! Please sign in.');
+    } else if (error === 'verification_failed') {
+      setErrors({ general: 'Email verification failed. Please try again or contact support.' });
     }
   }, [searchParams]);
 
@@ -84,13 +84,22 @@ function SignInForm() {
     try {
       const supabase = createBrowserClient();
 
+      // Clear any corrupted session data first
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        // Ignore sign out errors
+        console.log('Clearing session');
+      }
+
       // Sign in the user
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: formData.email,
+        email: formData.email.trim().toLowerCase(),
         password: formData.password,
       });
 
       if (error) {
+        console.error('Sign in error:', error);
         if (error.message.includes('Invalid login credentials')) {
           setErrors({ general: 'Invalid email or password. Please try again.' });
         } else if (error.message.includes('Email not confirmed')) {
@@ -104,56 +113,28 @@ function SignInForm() {
         } else {
           setErrors({ general: error.message });
         }
+        setLoading(false);
         return;
       }
 
-      if (!data.user) {
+      if (!data?.session || !data?.user) {
         setErrors({ general: 'Failed to sign in. Please try again.' });
+        setLoading(false);
         return;
       }
 
-      // Check if profile exists, create if not (for users who signed up before profile creation)
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', data.user.id)
-        .single();
+      // Wait a moment for session to be established
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      if (profileError && profileError.code === 'PGRST116') {
-        // Profile doesn't exist, create it
-        const metadata = data.user.user_metadata;
-        await supabase
-          .from('profiles')
-          .insert({
-            id: data.user.id,
-            email: data.user.email,
-            first_name: metadata.first_name || '',
-            last_name: metadata.last_name || '',
-            full_name: metadata.full_name || `${metadata.first_name || ''} ${metadata.last_name || ''}`.trim(),
-          });
-      }
-
-      // Set remember me preference
-      if (formData.rememberMe) {
-        // Set a longer session (30 days)
-        await supabase.auth.updateUser({
-          data: { remember_me: true }
-        });
-      }
-
-      // Check for redirect URL
-      const redirectUrl = sessionStorage.getItem('redirectAfterLogin');
-      if (redirectUrl) {
-        sessionStorage.removeItem('redirectAfterLogin');
-        router.push(redirectUrl);
-      } else {
-        // Default redirect to account dashboard
-        router.push('/account');
-      }
+      // Get redirect URL or default to account
+      const redirectTo = searchParams.get('redirect') || '/account';
+      
+      // Use window.location for hard navigation to ensure session is picked up
+      window.location.href = redirectTo;
+      
     } catch (error) {
-      console.error('Sign in error:', error);
-      setErrors({ general: 'An unexpected error occurred. Please try again.' });
-    } finally {
+      console.error('Unexpected sign in error:', error);
+      setErrors({ general: 'An unexpected error occurred. Please clear your browser cache and try again.' });
       setLoading(false);
     }
   };
@@ -171,11 +152,13 @@ function SignInForm() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* Logo/Header */}
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-marian-blue">
-            <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
-            </svg>
-          </div>
+          <Link href="/">
+            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-marian-blue cursor-pointer hover:bg-blue-700 transition-colors">
+              <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
+              </svg>
+            </div>
+          </Link>
           <h2 className="mt-6 text-3xl font-serif font-bold text-gray-900">
             Welcome back
           </h2>
@@ -377,7 +360,7 @@ export default function SignInPage() {
           <div className="sm:mx-auto sm:w-full sm:max-w-md">
             <div className="bg-white py-8 px-4 shadow-lg sm:rounded-lg sm:px-10 border border-gray-100">
               <div className="flex justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-marian-blue"></div>
               </div>
               <p className="mt-4 text-center text-sm text-gray-600">Loading...</p>
             </div>
