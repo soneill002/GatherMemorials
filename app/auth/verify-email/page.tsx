@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Mail, ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
@@ -10,61 +10,63 @@ function VerifyEmailContent() {
   const router = useRouter();
   const [status, setStatus] = useState<'waiting' | 'verifying' | 'success' | 'error'>('waiting');
   const [errorMessage, setErrorMessage] = useState('');
+  const hasProcessed = useRef(false);
   
   // Get parameters
   const email = searchParams.get('email');
+  const code = searchParams.get('code');
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type');
-  const code = searchParams.get('code');
 
   useEffect(() => {
-    // Prevent multiple executions
-    let isMounted = true;
+    // Only process once
+    if (hasProcessed.current) return;
     
     const performVerification = async () => {
-      // Only run once when we have verification parameters
-      if (!isMounted) return;
-      
-      if (token_hash && type) {
-        console.log('Email verification with token_hash detected');
+      // If we have a code parameter, this is an email verification
+      if (code && !hasProcessed.current) {
+        hasProcessed.current = true;
+        console.log('Email verification code detected:', code);
         setStatus('verifying');
         
-        // The fact that we received a token_hash means Supabase has verified the email
+        // The presence of the code means Supabase has verified the email
         // We just need to show success and redirect
         
-        // Wait a moment to show the verifying state
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Wait to show the verifying state
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
-        if (!isMounted) return;
         setStatus('success');
         
-        // Redirect to signin with success message after showing success
+        // Wait to show success, then redirect
         await new Promise(resolve => setTimeout(resolve, 2000));
-        if (!isMounted) return;
         
-        // Use window.location for a clean redirect
-        window.location.href = '/auth/signin?verified=true';
-        
-      } else if (code) {
-        // Handle OAuth/magic link codes
-        console.log('OAuth code detected');
+        // Hard redirect to signin
+        window.location.replace('/auth/signin?verified=true');
+        return;
+      }
+      
+      // If we have token_hash (different email template format)
+      if (token_hash && type && !hasProcessed.current) {
+        hasProcessed.current = true;
+        console.log('Token hash verification detected');
         setStatus('verifying');
         
-        // Wait a moment then redirect back to callback
-        await new Promise(resolve => setTimeout(resolve, 500));
-        if (!isMounted) return;
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        setStatus('success');
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        window.location.href = `/auth/callback?code=${code}`;
+        window.location.replace('/auth/signin?verified=true');
+        return;
+      }
+      
+      // If we only have email, show the waiting state
+      if (email) {
+        setStatus('waiting');
       }
     };
     
     performVerification();
-    
-    // Cleanup function
-    return () => {
-      isMounted = false;
-    };
-  }, []); // Empty dependency array - only run once on mount
+  }, [code, token_hash, type, email]);
 
   // Show verifying state
   if (status === 'verifying') {
