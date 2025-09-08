@@ -34,8 +34,7 @@ function SignInForm() {
 
   // Check for redirect parameter or success messages
   useEffect(() => {
-    // Clear any corrupted auth data on mount
-    clearAuthData();
+    // DON'T clear auth data automatically - only when there's an actual error
     
     const verified = searchParams.get('verified');
     const reset = searchParams.get('reset');
@@ -75,8 +74,10 @@ function SignInForm() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    console.log('Sign in form submitted');
     
     if (!validateForm()) {
+      console.log('Validation failed');
       return;
     }
 
@@ -88,8 +89,8 @@ function SignInForm() {
       // Create a fresh client instance
       const supabase = createBrowserClient();
 
-      // Clear any existing session first (scope: 'local' only clears this browser)
-      await supabase.auth.signOut({ scope: 'local' });
+      // Don't sign out here - it might clear a valid session
+      // Only sign out if we get a specific error
 
       // Sign in the user
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -118,22 +119,27 @@ function SignInForm() {
       }
 
       if (!data?.session || !data?.user) {
+        console.error('No session or user returned');
         setErrors({ general: 'Failed to sign in. Please try again.' });
         setLoading(false);
         return;
       }
+
+      console.log('Sign in successful, user:', data.user.email);
 
       // Verify the session was set properly
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
         console.error('Session not persisted after login');
-        setErrors({ general: 'Session error. Please try again or clear your browser cache.' });
+        setErrors({ general: 'Session error. Please try again.' });
         setLoading(false);
         return;
       }
 
-      // Check if profile exists, create if not (for users who signed up before profile creation)
+      console.log('Session verified, checking profile...');
+
+      // Check if profile exists, create if not
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -141,6 +147,7 @@ function SignInForm() {
         .single();
 
       if (profileError && profileError.code === 'PGRST116') {
+        console.log('Creating profile for user');
         // Profile doesn't exist, create it
         const metadata = data.user.user_metadata || {};
         await supabase
@@ -160,12 +167,14 @@ function SignInForm() {
       // Get redirect URL or default to account
       const redirectTo = searchParams.get('redirect') || '/account';
       
+      console.log('Redirecting to:', redirectTo);
+      
       // Use window.location for hard navigation to ensure session is picked up
       window.location.href = redirectTo;
       
     } catch (error) {
       console.error('Unexpected sign in error:', error);
-      setErrors({ general: 'An unexpected error occurred. Please clear your browser cache and try again.' });
+      setErrors({ general: 'An unexpected error occurred. Please try again.' });
       setLoading(false);
     }
   };
@@ -178,7 +187,7 @@ function SignInForm() {
     }
   };
 
-  // Add a manual clear cache button for troubleshooting
+  // Manual clear cache button for troubleshooting
   const handleClearCache = () => {
     clearAuthData();
     window.location.reload();
@@ -219,7 +228,7 @@ function SignInForm() {
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
                 <div className="flex justify-between items-start">
                   <span>{errors.general}</span>
-                  {errors.general.includes('cache') && (
+                  {errors.general.includes('Session error') && (
                     <button
                       type="button"
                       onClick={handleClearCache}
@@ -356,6 +365,17 @@ function SignInForm() {
               </Link>
             </div>
           </form>
+
+          {/* Troubleshooting button - always visible now */}
+          <div className="mt-6 text-center">
+            <button
+              type="button"
+              onClick={handleClearCache}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Having trouble signing in? Clear cache and try again
+            </button>
+          </div>
         </div>
 
         {/* Quick Access Links */}
@@ -394,19 +414,6 @@ function SignInForm() {
             Secure connection • Your data is encrypted and protected
           </p>
         </div>
-
-        {/* Troubleshooting Link (only shown in development) */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-4 text-center">
-            <button
-              type="button"
-              onClick={handleClearCache}
-              className="text-xs text-gray-500 hover:text-gray-700 underline"
-            >
-              Having trouble? Clear auth cache
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
