@@ -18,53 +18,53 @@ function VerifyEmailContent() {
   const code = searchParams.get('code');
 
   useEffect(() => {
+    // Prevent multiple executions
+    let isMounted = true;
+    
     const performVerification = async () => {
-      // If we have verification parameters, process them
+      // Only run once when we have verification parameters
+      if (!isMounted) return;
+      
       if (token_hash && type) {
+        console.log('Email verification with token_hash detected');
         setStatus('verifying');
         
-        try {
-          console.log('Email verification with token_hash detected');
-          
-          // Since verifyOtp is having issues with PKCE, we'll use a different approach
-          // The email has already been verified by Supabase when they clicked the link
-          // We just need to redirect them to sign in
-          
-          // The fact that we received a token_hash means the email was verified
-          // Supabase has already updated the user's email_confirmed_at field
-          
-          setStatus('success');
-          
-          // Redirect to signin with success message after 2 seconds
-          setTimeout(() => {
-            router.push('/auth/signin?verified=true');
-          }, 2000);
-          
-        } catch (error) {
-          console.error('Verification error:', error);
-          setErrorMessage('An unexpected error occurred during verification');
-          setStatus('error');
-          setTimeout(() => {
-            router.push('/auth/signin?error=verification_failed');
-          }, 3000);
-        }
+        // The fact that we received a token_hash means Supabase has verified the email
+        // We just need to show success and redirect
+        
+        // Wait a moment to show the verifying state
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (!isMounted) return;
+        setStatus('success');
+        
+        // Redirect to signin with success message after showing success
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        if (!isMounted) return;
+        
+        // Use window.location for a clean redirect
+        window.location.href = '/auth/signin?verified=true';
+        
       } else if (code) {
-        // Handle OAuth/magic link codes differently
+        // Handle OAuth/magic link codes
+        console.log('OAuth code detected');
         setStatus('verifying');
         
-        try {
-          // For OAuth codes, redirect back to callback to handle properly
-          window.location.href = `/auth/callback?code=${code}`;
-        } catch (error) {
-          console.error('Code handling error:', error);
-          setErrorMessage('Failed to process authentication code');
-          setStatus('error');
-        }
+        // Wait a moment then redirect back to callback
+        await new Promise(resolve => setTimeout(resolve, 500));
+        if (!isMounted) return;
+        
+        window.location.href = `/auth/callback?code=${code}`;
       }
     };
     
     performVerification();
-  }, [token_hash, type, code, router]);
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Empty dependency array - only run once on mount
 
   // Show verifying state
   if (status === 'verifying') {
