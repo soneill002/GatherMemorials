@@ -20,7 +20,7 @@ export function clearAuthData() {
     'gathermemorials-auth-token',
     'sb-auth-token',
     'supabase.auth.token',
-    `sb-${supabaseUrl}-auth-token`,
+    'sb-gathermemorials-auth-token',
   ];
   
   keysToRemove.forEach(key => {
@@ -59,7 +59,7 @@ export function createBrowserClient() {
         autoRefreshToken: true,
         detectSessionInUrl: true,
         flowType: 'pkce',
-        storageKey: `sb-${supabaseUrl}-auth-token`,
+        storageKey: 'sb-gathermemorials-auth-token', // Fixed: Use a simple string without special characters
         storage: {
           getItem: (key: string) => {
             if (typeof window === 'undefined') return null;
