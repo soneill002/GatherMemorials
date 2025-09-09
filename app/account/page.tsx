@@ -56,44 +56,58 @@ export default function AccountDashboard() {
 
   useEffect(() => {
     let mounted = true;
+    let authCheckComplete = false;
     
     const initializeDashboard = async () => {
       try {
-        console.log('Dashboard: Initializing...');
+        console.log('Dashboard: Initializing with direct getUser approach...');
         
         // Create Supabase client
         const supabase = createBrowserClient();
         
-        // Try to get session first (from local storage - fast)
-        console.log('Dashboard: Getting session...');
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        // Skip getSession and go straight to getUser
+        // This avoids the hanging issue with getSession
+        console.log('Dashboard: Calling getUser directly (skipping getSession)...');
+        
+        const startTime = Date.now();
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        const endTime = Date.now();
+        
+        console.log(`Dashboard: getUser completed in ${endTime - startTime}ms`, {
+          hasUser: !!user,
+          hasError: !!userError,
+          userEmail: user?.email
+        });
         
         if (!mounted) return;
+        authCheckComplete = true;
         
-        if (session?.user) {
-          console.log('Dashboard: Session found for:', session.user.email);
-          setUserId(session.user.id);
+        if (userError) {
+          console.error('Dashboard: User fetch error:', userError);
+          // Don't immediately fail - the user might still be logged in
+          // Try to refresh the session
+          console.log('Dashboard: Attempting to refresh session...');
+          const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
           
-          // Load data
-          const memorialsData = await loadMemorials(session.user.id);
-          if (!mounted) return;
-          
-          await loadStats(session.user.id, memorialsData);
-          if (!mounted) return;
-          
-          setIsLoading(false);
-          console.log('Dashboard: Initialization complete');
-          return;
+          if (session?.user) {
+            console.log('Dashboard: Session refreshed successfully');
+            setUserId(session.user.id);
+            
+            // Load data
+            const memorialsData = await loadMemorials(session.user.id);
+            if (!mounted) return;
+            
+            await loadStats(session.user.id, memorialsData);
+            if (!mounted) return;
+            
+            setIsLoading(false);
+            console.log('Dashboard: Initialization complete (via refresh)');
+            return;
+          }
         }
         
-        // If no session, try getUser (makes API call)
-        console.log('Dashboard: No session, trying getUser...');
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (!mounted) return;
-        
         if (user) {
-          console.log('Dashboard: User found via getUser:', user.email);
+          console.log('Dashboard: User authenticated:', user.email);
           setUserId(user.id);
           
           // Load data
@@ -108,13 +122,13 @@ export default function AccountDashboard() {
           return;
         }
         
-        // No user found at all
+        // No user found
         console.log('Dashboard: No user found, redirecting to signin');
         router.push('/auth/signin?redirect=/account');
         
       } catch (error) {
-        console.error('Dashboard: Error during initialization:', error);
-        if (mounted) {
+        console.error('Dashboard: Critical error during initialization:', error);
+        if (mounted && authCheckComplete) {
           setError('Failed to load dashboard. Please refresh the page or try signing in again.');
           setIsLoading(false);
         }
@@ -124,14 +138,14 @@ export default function AccountDashboard() {
     // Start initialization
     initializeDashboard();
     
-    // Failsafe timeout
+    // Failsafe timeout - but give more time since we're only doing one auth check
     const loadingTimeout = setTimeout(() => {
       if (mounted && isLoading) {
-        console.log('Dashboard: Loading timeout reached');
+        console.log('Dashboard: Loading timeout reached after 10 seconds');
         setError('Loading is taking longer than expected. Please refresh the page.');
         setIsLoading(false);
       }
-    }, 15000); // 15 second timeout
+    }, 10000); // 10 second timeout
 
     return () => {
       mounted = false;
@@ -319,9 +333,34 @@ export default function AccountDashboard() {
     try {
       const supabase = createBrowserClient();
       await supabase.auth.signOut();
+      // Clear any potentially corrupted local storage
+      localStorage.removeItem('sb-gathermemorials-auth-token');
       router.push('/');
     } catch (error) {
       console.error('Dashboard: Error signing out:', error);
+      // Force redirect even if signout fails
+      router.push('/');
+    }
+  };
+
+  const handleRefreshAuth = async () => {
+    try {
+      console.log('Dashboard: Refreshing authentication...');
+      const supabase = createBrowserClient();
+      
+      // Try to refresh the session
+      const { data: { session }, error } = await supabase.auth.refreshSession();
+      
+      if (session) {
+        console.log('Dashboard: Session refreshed successfully');
+        window.location.reload();
+      } else {
+        console.log('Dashboard: Session refresh failed, redirecting to signin');
+        router.push('/auth/signin?redirect=/account');
+      }
+    } catch (error) {
+      console.error('Dashboard: Error refreshing session:', error);
+      router.push('/auth/signin?redirect=/account');
     }
   };
 
@@ -351,7 +390,7 @@ export default function AccountDashboard() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading your dashboard...</p>
-          <p className="mt-2 text-sm text-gray-500">This may take a few moments</p>
+          <p className="mt-2 text-sm text-gray-500">Authenticating...</p>
         </div>
       </div>
     );
