@@ -6,8 +6,6 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { User } from '@supabase/supabase-js';
-import { Button } from '@/components/ui/Button';
-import { ChevronDown, User as UserIcon, LogOut, Settings, Heart, FileText, Plus, Menu, X } from 'lucide-react';
 
 export function Navbar() {
   const router = useRouter();
@@ -31,12 +29,13 @@ export function Navbar() {
           // Try to get the user's name from profile
           const { data: profile } = await supabase
             .from('profiles')
-            .select('first_name, last_name, full_name')
+            .select('first_name, last_name')
             .eq('id', session.user.id)
             .single();
           
           if (profile) {
-            setUserName(profile.full_name || `${profile.first_name} ${profile.last_name}`.trim() || session.user.email?.split('@')[0] || 'User');
+            const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+            setUserName(fullName || session.user.email?.split('@')[0] || 'User');
           } else {
             setUserName(session.user.email?.split('@')[0] || 'User');
           }
@@ -57,13 +56,16 @@ export function Navbar() {
         // Update user name when auth state changes
         const { data: profile } = await supabase
           .from('profiles')
-          .select('first_name, last_name, full_name')
+          .select('first_name, last_name')
           .eq('id', session.user.id)
           .single();
         
         if (profile) {
-          setUserName(profile.full_name || `${profile.first_name} ${profile.last_name}`.trim() || session.user.email?.split('@')[0] || 'User');
+          const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+          setUserName(fullName || session.user.email?.split('@')[0] || 'User');
         }
+      } else {
+        setUserName('');
       }
     });
 
@@ -96,7 +98,7 @@ export function Navbar() {
   const isActive = (path: string) => pathname === path;
 
   return (
-    <nav className="border-b border-vatican-200 bg-white">
+    <nav className="border-b border-gray-200 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           {/* Left side - Logo and Nav Links */}
@@ -104,7 +106,7 @@ export function Navbar() {
             <div className="flex-shrink-0">
               <Link 
                 href="/" 
-                className="font-serif text-2xl text-marian-500 hover:text-marian-600 transition-colors duration-200"
+                className="font-serif text-2xl text-blue-600 hover:text-blue-700 transition-colors duration-200"
               >
                 GatherMemorials
               </Link>
@@ -112,19 +114,31 @@ export function Navbar() {
             <div className="hidden sm:flex sm:space-x-8">
               <Link 
                 href="/" 
-                className={`${isActive('/') ? 'text-marian-500 border-b-2 border-marian-500' : 'text-vatican-700 hover:text-marian-500'} px-3 py-2 text-sm font-medium transition-colors duration-200 inline-flex items-center`}
+                className={`${
+                  isActive('/') 
+                    ? 'text-blue-600 border-b-2 border-blue-600' 
+                    : 'text-gray-700 hover:text-blue-600'
+                } px-3 py-2 text-sm font-medium transition-colors duration-200 inline-flex items-center`}
               >
                 Home
               </Link>
               <Link 
                 href="/how-it-works" 
-                className={`${isActive('/how-it-works') ? 'text-marian-500 border-b-2 border-marian-500' : 'text-vatican-700 hover:text-marian-500'} px-3 py-2 text-sm font-medium transition-colors duration-200 inline-flex items-center`}
+                className={`${
+                  isActive('/how-it-works') 
+                    ? 'text-blue-600 border-b-2 border-blue-600' 
+                    : 'text-gray-700 hover:text-blue-600'
+                } px-3 py-2 text-sm font-medium transition-colors duration-200 inline-flex items-center`}
               >
                 How It Works
               </Link>
               <Link 
                 href="/pricing" 
-                className={`${isActive('/pricing') ? 'text-marian-500 border-b-2 border-marian-500' : 'text-vatican-700 hover:text-marian-500'} px-3 py-2 text-sm font-medium transition-colors duration-200 inline-flex items-center`}
+                className={`${
+                  isActive('/pricing') 
+                    ? 'text-blue-600 border-b-2 border-blue-600' 
+                    : 'text-gray-700 hover:text-blue-600'
+                } px-3 py-2 text-sm font-medium transition-colors duration-200 inline-flex items-center`}
               >
                 Pricing
               </Link>
@@ -141,24 +155,25 @@ export function Navbar() {
             ) : user ? (
               <div className="flex items-center space-x-4">
                 {/* Create Memorial Button */}
-                <Link href="/memorials/new">
-                  <Button variant="primary" size="sm" className="flex items-center space-x-1">
-                    <Plus className="w-4 h-4" />
-                    <span>Create Memorial</span>
-                  </Button>
+                <Link 
+                  href="/memorials/new"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <PlusIcon className="w-4 h-4 mr-1" />
+                  <span>Create Memorial</span>
                 </Link>
 
                 {/* User Dropdown */}
                 <div className="relative user-dropdown">
                   <button
                     onClick={() => setShowDropdown(!showDropdown)}
-                    className="flex items-center space-x-2 text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200 rounded-md hover:bg-vatican-50"
+                    className="flex items-center space-x-2 text-gray-700 hover:text-blue-600 px-3 py-2 text-sm font-medium transition-colors duration-200 rounded-md hover:bg-gray-50"
                   >
-                    <div className="w-8 h-8 bg-marian-100 rounded-full flex items-center justify-center">
-                      <UserIcon className="w-5 h-5 text-marian-600" />
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                      <UserIcon className="w-5 h-5 text-blue-600" />
                     </div>
                     <span className="hidden md:block max-w-[150px] truncate">{userName}</span>
-                    <ChevronDown className={`w-4 h-4 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
+                    <ChevronDownIcon className={`w-4 h-4 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
                   </button>
 
                   {/* Dropdown Menu */}
@@ -184,7 +199,7 @@ export function Navbar() {
                           className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           onClick={() => setShowDropdown(false)}
                         >
-                          <FileText className="w-4 h-4 mr-3 text-gray-400" />
+                          <FileTextIcon className="w-4 h-4 mr-3 text-gray-400" />
                           My Memorials
                         </Link>
                         
@@ -193,7 +208,7 @@ export function Navbar() {
                           className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           onClick={() => setShowDropdown(false)}
                         >
-                          <Heart className="w-4 h-4 mr-3 text-gray-400" />
+                          <HeartIcon className="w-4 h-4 mr-3 text-gray-400" />
                           Prayer List
                         </Link>
                         
@@ -202,7 +217,7 @@ export function Navbar() {
                           className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           onClick={() => setShowDropdown(false)}
                         >
-                          <Settings className="w-4 h-4 mr-3 text-gray-400" />
+                          <SettingsIcon className="w-4 h-4 mr-3 text-gray-400" />
                           Settings
                         </Link>
                         
@@ -212,7 +227,7 @@ export function Navbar() {
                           onClick={handleSignOut}
                           className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left transition-colors"
                         >
-                          <LogOut className="w-4 h-4 mr-3" />
+                          <LogOutIcon className="w-4 h-4 mr-3" />
                           Sign Out
                         </button>
                       </div>
@@ -224,13 +239,13 @@ export function Navbar() {
               <>
                 <Link 
                   href="/auth/signin" 
-                  className="text-vatican-700 hover:text-marian-500 px-4 py-2 text-sm font-medium transition-colors duration-200 border border-vatican-300 rounded-md hover:border-marian-500"
+                  className="text-gray-700 hover:text-blue-600 px-4 py-2 text-sm font-medium transition-colors duration-200 border border-gray-300 rounded-md hover:border-blue-600"
                 >
                   Log In
                 </Link>
                 <Link 
                   href="/auth/signup" 
-                  className="bg-marian-500 text-white hover:bg-marian-600 px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200"
+                  className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200"
                 >
                   Sign Up
                 </Link>
@@ -242,14 +257,14 @@ export function Navbar() {
           <div className="sm:hidden">
             <button 
               type="button" 
-              className="text-vatican-700 hover:text-marian-500 p-2"
+              className="text-gray-700 hover:text-blue-600 p-2"
               aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               {mobileMenuOpen ? (
-                <X className="h-6 w-6" />
+                <XIcon className="h-6 w-6" />
               ) : (
-                <Menu className="h-6 w-6" />
+                <MenuIcon className="h-6 w-6" />
               )}
             </button>
           </div>
@@ -262,21 +277,27 @@ export function Navbar() {
           <div className="px-2 pt-2 pb-3 space-y-1">
             <Link
               href="/"
-              className={`${isActive('/') ? 'bg-marian-50 text-marian-600' : 'text-gray-700 hover:bg-gray-50'} block px-3 py-2 rounded-md text-base font-medium`}
+              className={`${
+                isActive('/') ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'
+              } block px-3 py-2 rounded-md text-base font-medium`}
               onClick={() => setMobileMenuOpen(false)}
             >
               Home
             </Link>
             <Link
               href="/how-it-works"
-              className={`${isActive('/how-it-works') ? 'bg-marian-50 text-marian-600' : 'text-gray-700 hover:bg-gray-50'} block px-3 py-2 rounded-md text-base font-medium`}
+              className={`${
+                isActive('/how-it-works') ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'
+              } block px-3 py-2 rounded-md text-base font-medium`}
               onClick={() => setMobileMenuOpen(false)}
             >
               How It Works
             </Link>
             <Link
               href="/pricing"
-              className={`${isActive('/pricing') ? 'bg-marian-50 text-marian-600' : 'text-gray-700 hover:bg-gray-50'} block px-3 py-2 rounded-md text-base font-medium`}
+              className={`${
+                isActive('/pricing') ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'
+              } block px-3 py-2 rounded-md text-base font-medium`}
               onClick={() => setMobileMenuOpen(false)}
             >
               Pricing
@@ -297,10 +318,10 @@ export function Navbar() {
                 </div>
                 <Link
                   href="/memorials/new"
-                  className="flex items-center px-3 py-2 text-base font-medium text-marian-600 hover:bg-marian-50 rounded-md"
+                  className="flex items-center px-3 py-2 text-base font-medium text-blue-600 hover:bg-blue-50 rounded-md"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <Plus className="w-5 h-5 mr-3" />
+                  <PlusIcon className="w-5 h-5 mr-3" />
                   Create Memorial
                 </Link>
                 <Link
@@ -316,7 +337,7 @@ export function Navbar() {
                   className="flex items-center px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <Heart className="w-5 h-5 mr-3" />
+                  <HeartIcon className="w-5 h-5 mr-3" />
                   Prayer List
                 </Link>
                 <Link
@@ -324,14 +345,14 @@ export function Navbar() {
                   className="flex items-center px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <Settings className="w-5 h-5 mr-3" />
+                  <SettingsIcon className="w-5 h-5 mr-3" />
                   Settings
                 </Link>
                 <button
                   onClick={handleSignOut}
                   className="flex items-center w-full px-3 py-2 text-base font-medium text-red-600 hover:bg-red-50 rounded-md text-left"
                 >
-                  <LogOut className="w-5 h-5 mr-3" />
+                  <LogOutIcon className="w-5 h-5 mr-3" />
                   Sign Out
                 </button>
               </div>
@@ -339,14 +360,14 @@ export function Navbar() {
               <div className="space-y-2">
                 <Link
                   href="/auth/signin"
-                  className="block w-full text-center px-3 py-2 text-base font-medium text-vatican-700 hover:bg-gray-50 border border-vatican-300 rounded-md"
+                  className="block w-full text-center px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-md"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Log In
                 </Link>
                 <Link
                   href="/auth/signup"
-                  className="block w-full text-center px-3 py-2 text-base font-medium text-white bg-marian-500 hover:bg-marian-600 rounded-md"
+                  className="block w-full text-center px-3 py-2 text-base font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Sign Up
@@ -357,5 +378,79 @@ export function Navbar() {
         </div>
       )}
     </nav>
+  );
+}
+
+// Simple icon components to avoid external dependencies
+function UserIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  );
+}
+
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
+  );
+}
+
+function MenuIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
+function HeartIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+    </svg>
+  );
+}
+
+function FileTextIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  );
+}
+
+function SettingsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+function LogOutIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+    </svg>
   );
 }
