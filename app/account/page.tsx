@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createBrowserClient, getCurrentUser } from '@/lib/supabase/client';
+import { createBrowserClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 
 // Simplified type definitions - adjust based on your actual schema
@@ -57,49 +57,63 @@ export default function AccountDashboard() {
   useEffect(() => {
     let mounted = true;
     
-    // Set a timeout to prevent infinite loading
-    const loadingTimeout = setTimeout(() => {
-      if (mounted && isLoading) {
-        console.log('Loading timeout reached');
-        setError('Loading is taking longer than expected. Please refresh the page.');
-        setIsLoading(false);
-      }
-    }, 20000); // 20 second timeout - give more time for auth
-
     const initializeDashboard = async () => {
       try {
-        console.log('Initializing dashboard...');
+        console.log('Dashboard: Initializing...');
         
-        // Use the improved getCurrentUser helper with retry logic
-        const { user, error: authError } = await getCurrentUser();
+        // Create Supabase client
+        const supabase = createBrowserClient();
+        
+        // Try to get session first (from local storage - fast)
+        console.log('Dashboard: Getting session...');
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (!mounted) return;
         
-        if (authError || !user) {
-          console.log('Authentication failed:', authError?.message || 'No user found');
-          console.log('Redirecting to signin...');
-          router.push('/auth/signin?redirect=/account');
+        if (session?.user) {
+          console.log('Dashboard: Session found for:', session.user.email);
+          setUserId(session.user.id);
+          
+          // Load data
+          const memorialsData = await loadMemorials(session.user.id);
+          if (!mounted) return;
+          
+          await loadStats(session.user.id, memorialsData);
+          if (!mounted) return;
+          
+          setIsLoading(false);
+          console.log('Dashboard: Initialization complete');
           return;
         }
-
-        console.log('User authenticated:', user.email);
-        setUserId(user.id);
-
-        // Load memorials first (they're needed for stats)
-        const memorialsData = await loadMemorials(user.id);
+        
+        // If no session, try getUser (makes API call)
+        console.log('Dashboard: No session, trying getUser...');
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
         
         if (!mounted) return;
         
-        // Then load stats with the memorial data
-        await loadStats(user.id, memorialsData);
+        if (user) {
+          console.log('Dashboard: User found via getUser:', user.email);
+          setUserId(user.id);
+          
+          // Load data
+          const memorialsData = await loadMemorials(user.id);
+          if (!mounted) return;
+          
+          await loadStats(user.id, memorialsData);
+          if (!mounted) return;
+          
+          setIsLoading(false);
+          console.log('Dashboard: Initialization complete');
+          return;
+        }
         
-        if (!mounted) return;
-        
-        console.log('Dashboard initialization complete');
-        setIsLoading(false);
+        // No user found at all
+        console.log('Dashboard: No user found, redirecting to signin');
+        router.push('/auth/signin?redirect=/account');
         
       } catch (error) {
-        console.error('Error initializing dashboard:', error);
+        console.error('Dashboard: Error during initialization:', error);
         if (mounted) {
           setError('Failed to load dashboard. Please refresh the page or try signing in again.');
           setIsLoading(false);
@@ -107,7 +121,17 @@ export default function AccountDashboard() {
       }
     };
 
+    // Start initialization
     initializeDashboard();
+    
+    // Failsafe timeout
+    const loadingTimeout = setTimeout(() => {
+      if (mounted && isLoading) {
+        console.log('Dashboard: Loading timeout reached');
+        setError('Loading is taking longer than expected. Please refresh the page.');
+        setIsLoading(false);
+      }
+    }, 15000); // 15 second timeout
 
     return () => {
       mounted = false;
@@ -117,7 +141,7 @@ export default function AccountDashboard() {
 
   const loadMemorials = async (userId: string) => {
     try {
-      console.log('Loading memorials for user:', userId);
+      console.log('Dashboard: Loading memorials for user:', userId);
       const supabase = createBrowserClient();
       
       const { data, error } = await supabase
@@ -129,24 +153,24 @@ export default function AccountDashboard() {
       if (error) {
         // Check if it's a "table doesn't exist" error
         if (error.code === '42P01') {
-          console.error('Memorials table does not exist');
+          console.error('Dashboard: Memorials table does not exist');
           setError('Database is not properly configured. Please contact support.');
           return [];
         }
         
         // Don't throw - user might not have memorials yet
         if (error.code !== 'PGRST116') { // Not a "no rows" error
-          console.error('Memorial loading error:', error.message);
+          console.error('Dashboard: Memorial loading error:', error.message);
         }
         setMemorials([]);
         return [];
       }
       
-      console.log('Loaded memorials:', data?.length || 0);
+      console.log('Dashboard: Loaded memorials:', data?.length || 0);
       setMemorials(data || []);
       return data || [];
     } catch (error) {
-      console.error('Unexpected error loading memorials:', error);
+      console.error('Dashboard: Unexpected error loading memorials:', error);
       setMemorials([]);
       return [];
     }
@@ -154,7 +178,7 @@ export default function AccountDashboard() {
 
   const loadStats = async (userId: string, memorialsData?: Memorial[]) => {
     try {
-      console.log('Loading stats for user:', userId);
+      console.log('Dashboard: Loading stats for user:', userId);
       const supabase = createBrowserClient();
       
       // Use passed memorial data or the state
@@ -185,8 +209,10 @@ export default function AccountDashboard() {
         pendingModeration: guestbookStats.pendingCount,
         prayerListCount: prayerCount
       });
+      
+      console.log('Dashboard: Stats loaded');
     } catch (error) {
-      console.error('Error loading stats:', error);
+      console.error('Dashboard: Error loading stats:', error);
       // Don't fail the whole page if stats fail to load
       // Use the memorial data we have for basic stats
       const memorialsToUse = memorialsData || memorials;
@@ -215,7 +241,7 @@ export default function AccountDashboard() {
         .in('memorial_id', memorialIds);
 
       if (totalError) {
-        console.error('Error loading total guestbook entries:', totalError);
+        console.error('Dashboard: Error loading total guestbook entries:', totalError);
         return { totalEntries: 0, pendingCount: 0 };
       }
 
@@ -227,7 +253,7 @@ export default function AccountDashboard() {
         .in('memorial_id', memorialIds);
 
       if (pendingError) {
-        console.error('Error loading pending guestbook entries:', pendingError);
+        console.error('Dashboard: Error loading pending guestbook entries:', pendingError);
         return { totalEntries: totalEntries || 0, pendingCount: 0 };
       }
 
@@ -236,7 +262,7 @@ export default function AccountDashboard() {
         pendingCount: pendingCount || 0
       };
     } catch (error) {
-      console.error('Error loading guestbook stats:', error);
+      console.error('Dashboard: Error loading guestbook stats:', error);
       return { totalEntries: 0, pendingCount: 0 };
     }
   };
@@ -249,13 +275,13 @@ export default function AccountDashboard() {
         .eq('user_id', userId);
 
       if (error) {
-        console.error('Error loading prayer list count:', error);
+        console.error('Dashboard: Error loading prayer list count:', error);
         return 0;
       }
 
       return count || 0;
     } catch (error) {
-      console.error('Error loading prayer list count:', error);
+      console.error('Dashboard: Error loading prayer list count:', error);
       return 0;
     }
   };
@@ -283,7 +309,7 @@ export default function AccountDashboard() {
       const updatedMemorials = memorials.filter(m => m.id !== selectedMemorial.id);
       await loadStats(userId, updatedMemorials);
     } catch (error) {
-      console.error('Error deleting memorial:', error);
+      console.error('Dashboard: Error deleting memorial:', error);
       setToastMessage('Failed to delete memorial');
       setShowToast(true);
     }
@@ -295,7 +321,7 @@ export default function AccountDashboard() {
       await supabase.auth.signOut();
       router.push('/');
     } catch (error) {
-      console.error('Error signing out:', error);
+      console.error('Dashboard: Error signing out:', error);
     }
   };
 
