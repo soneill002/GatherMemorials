@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
 
 interface Memorial {
   id: string;
@@ -26,7 +27,7 @@ export default function AccountDashboard() {
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -38,48 +39,57 @@ export default function AccountDashboard() {
         // Create Supabase client
         const supabase = createBrowserClient();
         
-        // Check authentication using Supabase's built-in session management
-        console.log('Dashboard: Checking authentication...');
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        // Use getUser instead of getSession to avoid hanging
+        console.log('Dashboard: Getting user...');
+        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
         
-        if (sessionError) {
-          console.error('Dashboard: Session error:', sessionError);
+        if (userError) {
+          console.error('Dashboard: User error:', userError);
+          // Clear any corrupted auth data
+          if (userError.message?.includes('session') || userError.message?.includes('token')) {
+            console.log('Dashboard: Clearing auth data and redirecting...');
+            await supabase.auth.signOut();
+          }
           router.push('/auth/signin?redirect=/account');
           return;
         }
         
-        if (!session) {
-          console.log('Dashboard: No active session found');
+        if (!currentUser) {
+          console.log('Dashboard: No user found, redirecting to sign in');
           router.push('/auth/signin?redirect=/account');
           return;
         }
         
-        console.log('Dashboard: Session found for user:', session.user.email);
+        console.log('Dashboard: User found:', currentUser.email);
         
         if (!mounted) return;
         
-        setUserEmail(session.user.email || null);
+        setUser(currentUser);
         
         // Load memorials for the authenticated user
-        console.log('Dashboard: Loading memorials...');
+        console.log('Dashboard: Loading memorials for user:', currentUser.id);
         const { data: memorialsData, error: memorialsError } = await supabase
           .from('memorials')
           .select('*')
-          .eq('user_id', session.user.id)
+          .eq('user_id', currentUser.id)
           .order('created_at', { ascending: false });
         
         if (memorialsError) {
           console.error('Dashboard: Error loading memorials:', memorialsError);
-          setError('Failed to load memorials. Please refresh the page.');
+          if (mounted) {
+            setError('Failed to load memorials. Please refresh the page.');
+          }
         } else {
           console.log('Dashboard: Loaded', memorialsData?.length || 0, 'memorials');
-          setMemorials(memorialsData || []);
+          if (mounted) {
+            setMemorials(memorialsData || []);
+          }
         }
         
-        if (!mounted) return;
-        
-        setIsLoading(false);
-        console.log('Dashboard: Initialization complete');
+        if (mounted) {
+          setIsLoading(false);
+          console.log('Dashboard: Initialization complete');
+        }
         
       } catch (error) {
         console.error('Dashboard: Unexpected error:', error);
@@ -90,33 +100,43 @@ export default function AccountDashboard() {
       }
     };
 
+    // Initialize dashboard with a timeout fallback
+    const timeoutId = setTimeout(() => {
+      if (mounted && isLoading) {
+        console.log('Dashboard: Timeout reached, showing error');
+        setError('Loading took too long. Please refresh the page.');
+        setIsLoading(false);
+      }
+    }, 10000); // 10 second timeout
+
+    initializeDashboard();
+    
     // Set up auth state listener
     const supabase = createBrowserClient();
-    
-    // Subscribe to auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Dashboard: Auth state changed:', event);
       
-      if (event === 'SIGNED_OUT' || !session) {
+      if (event === 'SIGNED_OUT') {
         router.push('/auth/signin');
       } else if (event === 'SIGNED_IN' && session) {
-        // Refresh the dashboard when user signs in
-        initializeDashboard();
+        // Refresh the page when user signs in
+        if (!user) {
+          initializeDashboard();
+        }
       }
     });
 
-    // Initialize dashboard
-    initializeDashboard();
-    
     // Cleanup function
     return () => {
       mounted = false;
+      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
-  }, [router]);
+  }, [router, user]);
 
   const handleSignOut = async () => {
     try {
+      setIsLoading(true);
       const supabase = createBrowserClient();
       
       // Sign out using Supabase
@@ -126,7 +146,7 @@ export default function AccountDashboard() {
         console.error('Error signing out:', error);
       }
       
-      // Redirect to home page (the auth listener will handle this too)
+      // Redirect to home page
       router.push('/');
     } catch (error) {
       console.error('Error signing out:', error);
@@ -220,7 +240,7 @@ export default function AccountDashboard() {
             <div>
               <h1 className="text-3xl font-bold text-gray-900">My Memorials</h1>
               <p className="mt-1 text-gray-600">
-                {userEmail ? `Signed in as ${userEmail}` : 'Manage your memorial pages'}
+                {user?.email ? `Signed in as ${user.email}` : 'Manage your memorial pages'}
               </p>
             </div>
             <div className="flex items-center gap-4">
