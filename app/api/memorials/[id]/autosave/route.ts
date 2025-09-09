@@ -1,6 +1,6 @@
 // app/api/memorials/[id]/autosave/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/client';
+import { createServerClient } from '@/lib/supabase/server';
 import { Memorial } from '@/types/memorial';
 
 /**
@@ -31,7 +31,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createClient();
+    const supabase = createServerClient();
     const memorialId = params.id;
 
     // Check authentication

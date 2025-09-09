@@ -1,6 +1,6 @@
 // app/api/memorials/create/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/client';
+import { createServerClient } from '@/lib/supabase/server';
 import { Memorial } from '@/types/memorial';
 
 /**
@@ -11,7 +11,7 @@ import { Memorial } from '@/types/memorial';
 export async function POST(request: NextRequest) {
   try {
     // Get the session from the request
-    const supabase = createClient();
+    const supabase = createServerClient();
     
     // Check if user is authenticated
     const { data: { user }, error: authError } = await supabase.auth.getUser();
