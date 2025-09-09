@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 import { Card, MemorialCard, StatCard, EmptyStateCard } from '@/components/ui/Card';
 import { useToast } from '@/components/ui/Toast';
@@ -21,7 +21,7 @@ interface DashboardStats {
 
 export default function AccountDashboard() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
+  const supabase = createBrowserClient();
   const { success, error: showError, ToastContainer } = useToast();
 
   // State
