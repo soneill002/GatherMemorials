@@ -373,6 +373,12 @@ export default function AccountDashboard() {
             >
               Refresh Page
             </button>
+            <button 
+              onClick={handleRefreshAuth}
+              className="w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+            >
+              Refresh Authentication
+            </button>
             <Link 
               href="/auth/signin"
               className="block w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-center transition-colors"
