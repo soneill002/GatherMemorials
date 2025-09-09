@@ -16,24 +16,63 @@ export function Navbar() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-} ${profile.last_name || ''}`.trim();
+  useEffect(() => {
+    const supabase = createBrowserClient();
+    
+    // Check initial auth state
+    const checkUser = async () => {
+      try {
+        console.log('Navbar: Checking auth state...');
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('Navbar: Session error:', sessionError);
+          setLoading(false);
+          return;
+        }
+        
+        if (session?.user) {
+          console.log('Navbar: User found:', session.user.email);
+          setUser(session.user);
+          
+          // Try to get the user's name from profile
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('first_name, last_name')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (profile) {
+            const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
             setUserName(fullName || session.user.email?.split('@')[0] || 'User');
           } else {
             setUserName(session.user.email?.split('@')[0] || 'User');
           }
+        } else {
+          console.log('Navbar: No user session');
         }
       } catch (error) {
-        console.error('Error checking auth:', error);
+        console.error('Navbar: Error checking auth:', error);
       } finally {
+        console.log('Navbar: Setting loading to false');
         setLoading(false);
       }
     };
 
     checkUser();
 
+    // Failsafe: Force loading to false after 2 seconds
+    const timeoutId = setTimeout(() => {
+      console.log('Navbar: Timeout reached, forcing loading to false');
+      setLoading(false);
+    }, 2000);
+
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log('Navbar: Auth state changed:', _event);
       setUser(session?.user || null);
+      setLoading(false); // Always set loading to false on auth change
+      
       if (session?.user) {
         // Update user name when auth state changes
         const { data: profile } = await supabase
@@ -45,6 +84,8 @@ export function Navbar() {
         if (profile) {
           const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
           setUserName(fullName || session.user.email?.split('@')[0] || 'User');
+        } else {
+          setUserName(session.user.email?.split('@')[0] || 'User');
         }
       } else {
         setUserName('');
