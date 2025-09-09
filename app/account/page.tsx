@@ -4,11 +4,23 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import type { Database } from '@/types/database';
 
-// Type definitions based on actual database schema
-type Memorial = Database['public']['Tables']['memorials']['Row'];
-type GuestbookEntry = Database['public']['Tables']['guestbook_entries']['Row'];
+// Simplified type definitions - adjust based on your actual schema
+interface Memorial {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string | null;
+  date_of_death: string | null;
+  headline: string | null;
+  status: 'draft' | 'published';
+  featured_image_url: string | null;
+  cover_photo_url: string | null;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+}
 
 interface DashboardStats {
   totalMemorials: number;
@@ -22,9 +34,6 @@ interface DashboardStats {
 
 export default function AccountDashboard() {
   const router = useRouter();
-  const supabase = createBrowserClient();
-
-  // State
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalMemorials: 0,
@@ -43,34 +52,53 @@ export default function AccountDashboard() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    checkAuth();
+    checkAuthAndLoadData();
   }, []);
 
-  const checkAuth = async () => {
+  const checkAuthAndLoadData = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Checking authentication...');
+      const supabase = createBrowserClient();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (!session) {
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        setError('Failed to load session. Please try signing in again.');
+        setIsLoading(false);
+        return;
+      }
+      
+      if (!session || !session.user) {
+        console.log('No session found, redirecting to signin');
         router.push('/auth/signin?redirect=/account');
         return;
       }
 
-      await Promise.all([
+      console.log('Session found for user:', session.user.email);
+      setUserId(session.user.id);
+
+      // Load data in parallel but with error handling for each
+      await Promise.allSettled([
         loadMemorials(session.user.id),
         loadStats(session.user.id)
       ]);
+
+      setIsLoading(false);
     } catch (error) {
-      console.error('Error checking auth:', error);
-      setError('Authentication error. Please sign in again.');
-    } finally {
+      console.error('Error in checkAuthAndLoadData:', error);
+      setError('An unexpected error occurred. Please refresh the page.');
       setIsLoading(false);
     }
   };
 
   const loadMemorials = async (userId: string) => {
     try {
+      console.log('Loading memorials for user:', userId);
+      const supabase = createBrowserClient();
+      
       const { data, error } = await supabase
         .from('memorials')
         .select('*')
@@ -79,97 +107,133 @@ export default function AccountDashboard() {
 
       if (error) {
         console.error('Error loading memorials:', error);
-        // Continue without memorials - user might not have any yet
+        // Don't throw - user might not have memorials yet
+        if (error.code !== 'PGRST116') { // Not a "no rows" error
+          console.error('Memorial loading error:', error.message);
+        }
+        setMemorials([]);
+        return;
       }
       
+      console.log('Loaded memorials:', data?.length || 0);
       setMemorials(data || []);
     } catch (error) {
-      console.error('Error loading memorials:', error);
+      console.error('Unexpected error loading memorials:', error);
+      setMemorials([]);
     }
   };
 
   const loadStats = async (userId: string) => {
     try {
-      // Load memorial count
-      const { count: memorialCount } = await supabase
-        .from('memorials')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId);
-
-      // Get published and draft counts
-      const { count: publishedCount } = await supabase
-        .from('memorials')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('status', 'published');
-
-      const { count: draftCount } = await supabase
-        .from('memorials')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('status', 'draft');
-
-      // Calculate total views from memorials
-      const { data: memorialsWithViews } = await supabase
-        .from('memorials')
-        .select('view_count')
-        .eq('user_id', userId);
+      console.log('Loading stats for user:', userId);
+      const supabase = createBrowserClient();
       
-      const totalViews = memorialsWithViews?.reduce((sum, item) => sum + (item.view_count || 0), 0) || 0;
-
-      // Load guestbook stats if there are memorials
-      let totalEntries = 0;
-      let pendingCount = 0;
+      // Load memorial stats
+      const memorialStats = await loadMemorialStats(supabase, userId);
       
-      if (memorials.length > 0) {
-        const memorialIds = memorials.map(m => m.id);
-        
-        // Get total guestbook entries
-        const { count: entriesCount } = await supabase
-          .from('guestbook_entries')
-          .select('*', { count: 'exact', head: true })
-          .in('memorial_id', memorialIds);
-
-        totalEntries = entriesCount || 0;
-
-        // Get pending entries
-        const { count: pending } = await supabase
-          .from('guestbook_entries')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'pending')
-          .in('memorial_id', memorialIds);
-
-        pendingCount = pending || 0;
-      }
+      // Load guestbook stats (only if there are memorials)
+      const guestbookStats = memorials.length > 0 
+        ? await loadGuestbookStats(supabase, memorials.map(m => m.id))
+        : { totalEntries: 0, pendingCount: 0 };
 
       // Load prayer list count
-      const { count: prayerCount } = await supabase
+      const prayerCount = await loadPrayerListCount(supabase, userId);
+
+      setStats({
+        totalMemorials: memorialStats.total,
+        publishedMemorials: memorialStats.published,
+        draftMemorials: memorialStats.draft,
+        totalViews: memorialStats.views,
+        totalGuestbookEntries: guestbookStats.totalEntries,
+        pendingModeration: guestbookStats.pendingCount,
+        prayerListCount: prayerCount
+      });
+    } catch (error) {
+      console.error('Error loading stats:', error);
+      // Don't fail the whole page if stats fail to load
+    }
+  };
+
+  const loadMemorialStats = async (supabase: any, userId: string) => {
+    try {
+      // Get all memorials for counts and views
+      const { data: allMemorials, error } = await supabase
+        .from('memorials')
+        .select('status, view_count')
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error loading memorial stats:', error);
+        return { total: 0, published: 0, draft: 0, views: 0 };
+      }
+
+      const stats = {
+        total: allMemorials?.length || 0,
+        published: allMemorials?.filter(m => m.status === 'published').length || 0,
+        draft: allMemorials?.filter(m => m.status === 'draft').length || 0,
+        views: allMemorials?.reduce((sum, m) => sum + (m.view_count || 0), 0) || 0
+      };
+
+      return stats;
+    } catch (error) {
+      console.error('Error in loadMemorialStats:', error);
+      return { total: 0, published: 0, draft: 0, views: 0 };
+    }
+  };
+
+  const loadGuestbookStats = async (supabase: any, memorialIds: string[]) => {
+    if (memorialIds.length === 0) {
+      return { totalEntries: 0, pendingCount: 0 };
+    }
+
+    try {
+      // Get total entries
+      const { count: totalEntries } = await supabase
+        .from('guestbook_entries')
+        .select('*', { count: 'exact', head: true })
+        .in('memorial_id', memorialIds);
+
+      // Get pending entries
+      const { count: pendingCount } = await supabase
+        .from('guestbook_entries')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending')
+        .in('memorial_id', memorialIds);
+
+      return {
+        totalEntries: totalEntries || 0,
+        pendingCount: pendingCount || 0
+      };
+    } catch (error) {
+      console.error('Error loading guestbook stats:', error);
+      return { totalEntries: 0, pendingCount: 0 };
+    }
+  };
+
+  const loadPrayerListCount = async (supabase: any, userId: string) => {
+    try {
+      const { count } = await supabase
         .from('prayer_lists')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId);
 
-      setStats({
-        totalMemorials: memorialCount || 0,
-        publishedMemorials: publishedCount || 0,
-        draftMemorials: draftCount || 0,
-        totalViews: totalViews,
-        totalGuestbookEntries: totalEntries,
-        pendingModeration: pendingCount,
-        prayerListCount: prayerCount || 0
-      });
+      return count || 0;
     } catch (error) {
-      console.error('Error loading stats:', error);
+      console.error('Error loading prayer list count:', error);
+      return 0;
     }
   };
 
   const handleDeleteMemorial = async () => {
-    if (!selectedMemorial) return;
+    if (!selectedMemorial || !userId) return;
 
     try {
+      const supabase = createBrowserClient();
       const { error } = await supabase
         .from('memorials')
         .delete()
-        .eq('id', selectedMemorial.id);
+        .eq('id', selectedMemorial.id)
+        .eq('user_id', userId); // Extra safety check
 
       if (error) throw error;
 
@@ -180,9 +244,8 @@ export default function AccountDashboard() {
       setSelectedMemorial(null);
       
       // Reload stats
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        loadStats(session.user.id);
+      if (userId) {
+        loadStats(userId);
       }
     } catch (error) {
       console.error('Error deleting memorial:', error);
@@ -199,12 +262,16 @@ export default function AccountDashboard() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
-    });
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    } catch {
+      return '';
+    }
   };
 
   if (isLoading) {
@@ -221,14 +288,26 @@ export default function AccountDashboard() {
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 mb-4">{error}</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Retry
-          </button>
+        <div className="text-center max-w-md">
+          <svg className="mx-auto h-12 w-12 text-red-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Dashboard</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <div className="space-y-3">
+            <button 
+              onClick={() => window.location.reload()} 
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Refresh Page
+            </button>
+            <Link 
+              href="/auth/signin"
+              className="block w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-center"
+            >
+              Sign In Again
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -265,53 +344,6 @@ export default function AccountDashboard() {
             title="Pending Moderation" 
             value={stats.pendingModeration}
             highlight={stats.pendingModeration > 0}
-          />
-        </div>
-
-        {/* Pending Moderation Alert */}
-        {stats.pendingModeration > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-8">
-            <div className="flex items-start">
-              <svg className="w-5 h-5 text-amber-600 mt-0.5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <div className="flex-1">
-                <h3 className="text-sm font-medium text-amber-800">
-                  You have {stats.pendingModeration} guestbook {stats.pendingModeration === 1 ? 'entry' : 'entries'} awaiting moderation
-                </h3>
-                <Link href="/account/guestbook/pending" className="text-sm text-amber-700 hover:text-amber-800 underline mt-1 inline-block">
-                  Review pending entries →
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Quick Links */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <QuickLinkCard 
-            href="/account/prayer-list"
-            title="Prayer List"
-            subtitle={`${stats.prayerListCount} people`}
-            icon="prayer"
-          />
-          <QuickLinkCard 
-            href="/account/billing"
-            title="Billing"
-            subtitle="Payment history"
-            icon="billing"
-          />
-          <QuickLinkCard 
-            href="/account/settings"
-            title="Settings"
-            subtitle="Account settings"
-            icon="settings"
-          />
-          <QuickLinkCard 
-            href="/contact"
-            title="Support"
-            subtitle="Get help"
-            icon="support"
           />
         </div>
 
@@ -380,6 +412,7 @@ export default function AccountDashboard() {
                       setToastMessage('Memorial link copied to clipboard');
                       setShowToast(true);
                     }}
+                    formatDate={formatDate}
                   />
                 ))}
               </div>
@@ -396,12 +429,12 @@ export default function AccountDashboard() {
       </div>
 
       {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
+      {showDeleteModal && selectedMemorial && (
         <DeleteModal
           isOpen={showDeleteModal}
           onClose={() => setShowDeleteModal(false)}
           onConfirm={handleDeleteMemorial}
-          memorialName={selectedMemorial ? `${selectedMemorial.first_name} ${selectedMemorial.last_name}` : ''}
+          memorialName={`${selectedMemorial.first_name} ${selectedMemorial.last_name}`}
         />
       )}
 
@@ -416,7 +449,7 @@ export default function AccountDashboard() {
   );
 }
 
-// Component definitions
+// Component definitions remain the same...
 function StatCard({ title, value, highlight = false }: { title: string; value: number; highlight?: boolean }) {
   return (
     <div className={`bg-white rounded-lg shadow p-6 ${highlight ? 'ring-2 ring-amber-500' : ''}`}>
@@ -424,51 +457,6 @@ function StatCard({ title, value, highlight = false }: { title: string; value: n
       <p className={`mt-2 text-3xl font-semibold ${highlight ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
     </div>
   );
-}
-
-function QuickLinkCard({ href, title, subtitle, icon }: { href: string; title: string; subtitle: string; icon: string }) {
-  return (
-    <Link href={href}>
-      <div className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow cursor-pointer">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-            <IconComponent type={icon} />
-          </div>
-          <div>
-            <p className="font-medium text-gray-900">{title}</p>
-            <p className="text-sm text-gray-500">{subtitle}</p>
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function IconComponent({ type }: { type: string }) {
-  const icons: { [key: string]: JSX.Element } = {
-    prayer: (
-      <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-      </svg>
-    ),
-    billing: (
-      <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-      </svg>
-    ),
-    settings: (
-      <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
-    support: (
-      <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-    )
-  };
-  return icons[type] || <div />;
 }
 
 function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
@@ -486,35 +474,17 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
   );
 }
 
-function MemorialCard({ memorial, viewMode, onEdit, onDelete, onShare }: any) {
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
-    });
-  };
-
+function MemorialCard({ memorial, viewMode, onEdit, onDelete, onShare, formatDate }: any) {
   if (viewMode === 'list') {
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            {memorial.featured_image_url ? (
-              <img 
-                src={memorial.featured_image_url} 
-                alt={`${memorial.first_name} ${memorial.last_name}`}
-                className="w-16 h-16 rounded-full object-cover"
-              />
-            ) : (
-              <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
-                <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </div>
-            )}
+            <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
+              <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
             <div>
               <h3 className="text-lg font-medium text-gray-900">
                 {memorial.first_name} {memorial.last_name}
@@ -532,21 +502,9 @@ function MemorialCard({ memorial, viewMode, onEdit, onDelete, onShare }: any) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onEdit} className="p-2 text-gray-400 hover:text-gray-600">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
-            <button onClick={onShare} className="p-2 text-gray-400 hover:text-gray-600">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m9.032 4.026a3 3 0 10-4.732 0m4.732 0a3 3 0 10-4.732 0M6.316 10.658a3 3 0 10-2.632 0" />
-              </svg>
-            </button>
-            <button onClick={onDelete} className="p-2 text-gray-400 hover:text-red-600">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+            <button onClick={onEdit} className="p-2 text-gray-400 hover:text-gray-600">Edit</button>
+            <button onClick={onShare} className="p-2 text-gray-400 hover:text-gray-600">Share</button>
+            <button onClick={onDelete} className="p-2 text-gray-400 hover:text-red-600">Delete</button>
           </div>
         </div>
       </div>
@@ -555,53 +513,25 @@ function MemorialCard({ memorial, viewMode, onEdit, onDelete, onShare }: any) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
-      <div className="aspect-w-16 aspect-h-9 bg-gray-200">
-        {memorial.cover_photo_url ? (
-          <img 
-            src={memorial.cover_photo_url} 
-            alt="Memorial cover"
-            className="w-full h-48 object-cover"
-          />
-        ) : (
-          <div className="w-full h-48 bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
-            <svg className="w-12 h-12 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
-        )}
+      <div className="w-full h-48 bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
+        <svg className="w-12 h-12 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
       </div>
       <div className="p-4">
-        <div className="flex items-start justify-between mb-2">
-          <h3 className="text-lg font-semibold text-gray-900">
-            {memorial.first_name} {memorial.last_name}
-          </h3>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-            memorial.status === 'published' 
-              ? 'bg-green-100 text-green-800' 
-              : 'bg-yellow-100 text-yellow-800'
-          }`}>
-            {memorial.status === 'published' ? 'Published' : 'Draft'}
-          </span>
-        </div>
+        <h3 className="text-lg font-semibold text-gray-900">
+          {memorial.first_name} {memorial.last_name}
+        </h3>
         <p className="text-sm text-gray-500 mb-4">
           {formatDate(memorial.date_of_birth)} - {formatDate(memorial.date_of_death)}
         </p>
-        {memorial.headline && (
-          <p className="text-sm text-gray-600 mb-4 line-clamp-2">{memorial.headline}</p>
-        )}
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
           <div className="flex items-center gap-2">
-            <button onClick={onEdit} className="text-sm text-blue-600 hover:text-blue-700">
-              Edit
-            </button>
+            <button onClick={onEdit} className="text-sm text-blue-600 hover:text-blue-700">Edit</button>
             <span className="text-gray-300">•</span>
-            <button onClick={onShare} className="text-sm text-blue-600 hover:text-blue-700">
-              Share
-            </button>
+            <button onClick={onShare} className="text-sm text-blue-600 hover:text-blue-700">Share</button>
           </div>
-          <button onClick={onDelete} className="text-sm text-red-600 hover:text-red-700">
-            Delete
-          </button>
+          <button onClick={onDelete} className="text-sm text-red-600 hover:text-red-700">Delete</button>
         </div>
       </div>
     </div>
@@ -619,7 +549,7 @@ function EmptyState({ title, description, actionLabel, onAction }: any) {
       <div className="mt-6">
         <button
           onClick={onAction}
-          className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
         >
           {actionLabel}
         </button>
@@ -685,14 +615,4 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
       {message}
     </div>
   );
-}
-
-function formatDate(dateString: string | null) {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric' 
-  });
 }
