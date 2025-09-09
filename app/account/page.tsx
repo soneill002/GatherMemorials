@@ -112,28 +112,33 @@ export default function AccountDashboard() {
           console.error('Memorial loading error:', error.message);
         }
         setMemorials([]);
-        return;
+        return [];
       }
       
       console.log('Loaded memorials:', data?.length || 0);
       setMemorials(data || []);
+      return data || [];
     } catch (error) {
       console.error('Unexpected error loading memorials:', error);
       setMemorials([]);
+      return [];
     }
   };
 
-  const loadStats = async (userId: string) => {
+  const loadStats = async (userId: string, memorialsData?: any[]) => {
     try {
       console.log('Loading stats for user:', userId);
       const supabase = createBrowserClient();
+      
+      // Use passed memorial data or empty array
+      const memorialsToUse = memorialsData || [];
       
       // Load memorial stats
       const memorialStats = await loadMemorialStats(supabase, userId);
       
       // Load guestbook stats (only if there are memorials)
-      const guestbookStats = memorials.length > 0 
-        ? await loadGuestbookStats(supabase, memorials.map(m => m.id))
+      const guestbookStats = memorialsToUse.length > 0 
+        ? await loadGuestbookStats(supabase, memorialsToUse.map(m => m.id))
         : { totalEntries: 0, pendingCount: 0 };
 
       // Load prayer list count
@@ -615,4 +620,4 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
       {message}
     </div>
   );
-} 
+}
