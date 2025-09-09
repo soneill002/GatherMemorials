@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
@@ -28,13 +28,18 @@ export default function AccountDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const hasInitialized = useRef(false);
 
   useEffect(() => {
-    let mounted = true;
+    // Prevent multiple initializations
+    if (hasInitialized.current) {
+      return;
+    }
     
     const initializeDashboard = async () => {
       try {
         console.log('Dashboard: Initializing...');
+        hasInitialized.current = true;
         
         // Create Supabase client
         const supabase = createBrowserClient();
@@ -61,9 +66,6 @@ export default function AccountDashboard() {
         }
         
         console.log('Dashboard: User found:', currentUser.email);
-        
-        if (!mounted) return;
-        
         setUser(currentUser);
         
         // Load memorials for the authenticated user
@@ -76,63 +78,41 @@ export default function AccountDashboard() {
         
         if (memorialsError) {
           console.error('Dashboard: Error loading memorials:', memorialsError);
-          if (mounted) {
-            setError('Failed to load memorials. Please refresh the page.');
-          }
+          setError('Failed to load memorials. Please refresh the page.');
         } else {
           console.log('Dashboard: Loaded', memorialsData?.length || 0, 'memorials');
-          if (mounted) {
-            setMemorials(memorialsData || []);
-          }
+          setMemorials(memorialsData || []);
         }
         
-        if (mounted) {
-          setIsLoading(false);
-          console.log('Dashboard: Initialization complete');
-        }
+        setIsLoading(false);
+        console.log('Dashboard: Initialization complete');
         
       } catch (error) {
         console.error('Dashboard: Unexpected error:', error);
-        if (mounted) {
-          setError('Failed to load dashboard. Please try refreshing the page.');
-          setIsLoading(false);
-        }
+        setError('Failed to load dashboard. Please try refreshing the page.');
+        setIsLoading(false);
       }
     };
 
-    // Initialize dashboard with a timeout fallback
-    const timeoutId = setTimeout(() => {
-      if (mounted && isLoading) {
-        console.log('Dashboard: Timeout reached, showing error');
-        setError('Loading took too long. Please refresh the page.');
-        setIsLoading(false);
-      }
-    }, 10000); // 10 second timeout
-
+    // Initialize dashboard
     initializeDashboard();
     
-    // Set up auth state listener
+    // Set up auth state listener (separate from initialization)
     const supabase = createBrowserClient();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Dashboard: Auth state changed:', event);
       
       if (event === 'SIGNED_OUT') {
         router.push('/auth/signin');
-      } else if (event === 'SIGNED_IN' && session) {
-        // Refresh the page when user signs in
-        if (!user) {
-          initializeDashboard();
-        }
       }
+      // Don't re-initialize on SIGNED_IN if we already have a user
     });
 
     // Cleanup function
     return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
-  }, [router, user]);
+  }, []); // Empty dependency array - only run once on mount
 
   const handleSignOut = async () => {
     try {
