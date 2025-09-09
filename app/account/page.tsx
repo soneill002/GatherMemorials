@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 interface Memorial {
   id: string;
@@ -25,152 +26,63 @@ export default function AccountDashboard() {
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     
     const initializeDashboard = async () => {
       try {
-        console.log('Dashboard: Starting direct API auth check...');
+        console.log('Dashboard: Initializing...');
         
-        // Get the auth token from localStorage
-        const authTokenData = localStorage.getItem('sb-gathermemorials-auth-token');
+        // Create Supabase client
+        const supabase = createBrowserClient();
         
-        if (!authTokenData) {
-          console.log('Dashboard: No auth token in localStorage');
+        // Check authentication using Supabase's built-in session management
+        console.log('Dashboard: Checking authentication...');
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('Dashboard: Session error:', sessionError);
           router.push('/auth/signin?redirect=/account');
           return;
         }
         
-        let accessToken: string;
-        let refreshToken: string;
-        try {
-          const parsed = JSON.parse(authTokenData);
-          accessToken = parsed.access_token;
-          refreshToken = parsed.refresh_token;
-          
-          if (!accessToken) {
-            console.log('Dashboard: No access token in auth data');
-            router.push('/auth/signin?redirect=/account');
-            return;
-          }
-        } catch (err) {
-          console.error('Dashboard: Failed to parse auth token:', err);
-          localStorage.removeItem('sb-gathermemorials-auth-token');
+        if (!session) {
+          console.log('Dashboard: No active session found');
           router.push('/auth/signin?redirect=/account');
           return;
         }
         
-        // Make a direct API call to verify the token with timeout
-        console.log('Dashboard: Verifying token with direct API call...');
+        console.log('Dashboard: Session found for user:', session.user.email);
         
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        if (!mounted) return;
         
-        try {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/user`, {
-            headers: {
-              'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-              'Authorization': `Bearer ${accessToken}`
-            },
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
-          
-          if (!response.ok) {
-            console.log('Dashboard: Token verification failed, status:', response.status);
-            
-            // Try to refresh the token if it's expired
-            if (response.status === 401 && refreshToken) {
-              console.log('Dashboard: Attempting to refresh token...');
-              
-              const refreshResponse = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-                method: 'POST',
-                headers: {
-                  'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ refresh_token: refreshToken })
-              });
-              
-              if (refreshResponse.ok) {
-                const newTokenData = await refreshResponse.json();
-                localStorage.setItem('sb-gathermemorials-auth-token', JSON.stringify(newTokenData));
-                
-                // Retry with new token
-                accessToken = newTokenData.access_token;
-                console.log('Dashboard: Token refreshed, retrying...');
-              } else {
-                console.log('Dashboard: Token refresh failed');
-                localStorage.removeItem('sb-gathermemorials-auth-token');
-                router.push('/auth/signin?redirect=/account');
-                return;
-              }
-            } else {
-              localStorage.removeItem('sb-gathermemorials-auth-token');
-              router.push('/auth/signin?redirect=/account');
-              return;
-            }
-          }
-          
-          const userData = await response.json();
-          console.log('Dashboard: User verified:', userData.email);
-          
-          if (!mounted) return;
-          
-          setUserId(userData.id);
-          
-          // Now load memorials using the verified user ID
-          console.log('Dashboard: Loading memorials...');
-          
-          const memorialsController = new AbortController();
-          const memorialsTimeoutId = setTimeout(() => memorialsController.abort(), 5000);
-          
-          const memorialsResponse = await fetch(
-            `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/memorials?user_id=eq.${userData.id}&order=created_at.desc`,
-            {
-              headers: {
-                'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-                'Authorization': `Bearer ${accessToken}`,
-                'Prefer': 'return=representation'
-              },
-              signal: memorialsController.signal
-            }
-          );
-          
-          clearTimeout(memorialsTimeoutId);
-          
-          if (memorialsResponse.ok) {
-            const memorialsData = await memorialsResponse.json();
-            console.log('Dashboard: Loaded', memorialsData.length, 'memorials');
-            setMemorials(memorialsData);
-          } else {
-            console.error('Dashboard: Failed to load memorials, status:', memorialsResponse.status);
-            setMemorials([]);
-          }
-          
-          if (!mounted) return;
-          
-          setIsLoading(false);
-          console.log('Dashboard: Initialization complete');
-          
-        } catch (err: any) {
-          if (err.name === 'AbortError') {
-            console.error('Dashboard: Request timed out');
-            setError('Request timed out. Please check your connection and try again.');
-          } else {
-            console.error('Dashboard: Request failed:', err);
-            setError('Failed to connect to the server. Please try again.');
-          }
-          if (mounted) {
-            setIsLoading(false);
-          }
+        setUserEmail(session.user.email || null);
+        
+        // Load memorials for the authenticated user
+        console.log('Dashboard: Loading memorials...');
+        const { data: memorialsData, error: memorialsError } = await supabase
+          .from('memorials')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false });
+        
+        if (memorialsError) {
+          console.error('Dashboard: Error loading memorials:', memorialsError);
+          setError('Failed to load memorials. Please refresh the page.');
+        } else {
+          console.log('Dashboard: Loaded', memorialsData?.length || 0, 'memorials');
+          setMemorials(memorialsData || []);
         }
+        
+        if (!mounted) return;
+        
+        setIsLoading(false);
+        console.log('Dashboard: Initialization complete');
         
       } catch (error) {
-        console.error('Dashboard: Critical error:', error);
+        console.error('Dashboard: Unexpected error:', error);
         if (mounted) {
           setError('Failed to load dashboard. Please try refreshing the page.');
           setIsLoading(false);
@@ -178,50 +90,43 @@ export default function AccountDashboard() {
       }
     };
 
+    // Set up auth state listener
+    const supabase = createBrowserClient();
+    
+    // Subscribe to auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Dashboard: Auth state changed:', event);
+      
+      if (event === 'SIGNED_OUT' || !session) {
+        router.push('/auth/signin');
+      } else if (event === 'SIGNED_IN' && session) {
+        // Refresh the dashboard when user signs in
+        initializeDashboard();
+      }
+    });
+
+    // Initialize dashboard
     initializeDashboard();
     
-    // Failsafe timeout
-    const timeout = setTimeout(() => {
-      if (mounted && isLoading) {
-        console.log('Dashboard: Failsafe timeout reached after 15 seconds');
-        setError('Loading took too long. Please refresh the page.');
-        setIsLoading(false);
-      }
-    }, 15000);
-
+    // Cleanup function
     return () => {
       mounted = false;
-      clearTimeout(timeout);
+      subscription.unsubscribe();
     };
   }, [router]);
 
   const handleSignOut = async () => {
     try {
-      // Clear the auth token
-      localStorage.removeItem('sb-gathermemorials-auth-token');
+      const supabase = createBrowserClient();
       
-      // Also try to call the signout endpoint
-      const authTokenData = localStorage.getItem('sb-gathermemorials-auth-token');
-      if (authTokenData) {
-        try {
-          const parsed = JSON.parse(authTokenData);
-          const accessToken = parsed.access_token;
-          
-          // Best effort signout
-          fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/logout`, {
-            method: 'POST',
-            headers: {
-              'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-              'Authorization': `Bearer ${accessToken}`
-            }
-          }).catch(() => {
-            // Ignore errors - we're signing out anyway
-          });
-        } catch {
-          // Ignore parse errors
-        }
+      // Sign out using Supabase
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Error signing out:', error);
       }
       
+      // Redirect to home page (the auth listener will handle this too)
       router.push('/');
     } catch (error) {
       console.error('Error signing out:', error);
@@ -235,28 +140,19 @@ export default function AccountDashboard() {
     }
     
     try {
-      const authTokenData = localStorage.getItem('sb-gathermemorials-auth-token');
-      if (!authTokenData) return;
+      const supabase = createBrowserClient();
       
-      const parsed = JSON.parse(authTokenData);
-      const accessToken = parsed.access_token;
+      const { error } = await supabase
+        .from('memorials')
+        .delete()
+        .eq('id', memorialId);
       
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/memorials?id=eq.${memorialId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            'Authorization': `Bearer ${accessToken}`
-          }
-        }
-      );
-      
-      if (response.ok) {
+      if (error) {
+        console.error('Error deleting memorial:', error);
+        alert('Failed to delete memorial. Please try again.');
+      } else {
         setMemorials(prev => prev.filter(m => m.id !== memorialId));
         alert('Memorial deleted successfully');
-      } else {
-        alert('Failed to delete memorial. Please try again.');
       }
     } catch (error) {
       console.error('Error deleting memorial:', error);
@@ -283,7 +179,6 @@ export default function AccountDashboard() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading your dashboard...</p>
-          <p className="mt-2 text-sm text-gray-500">Connecting to server...</p>
         </div>
       </div>
     );
@@ -324,7 +219,9 @@ export default function AccountDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">My Memorials</h1>
-              <p className="mt-1 text-gray-600">Manage your memorial pages</p>
+              <p className="mt-1 text-gray-600">
+                {userEmail ? `Signed in as ${userEmail}` : 'Manage your memorial pages'}
+              </p>
             </div>
             <div className="flex items-center gap-4">
               <Link 
