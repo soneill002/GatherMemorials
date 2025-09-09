@@ -16,25 +16,7 @@ export function Navbar() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  useEffect(() => {
-    const supabase = createBrowserClient();
-    
-    // Check initial auth state
-    const checkUser = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          setUser(session.user);
-          
-          // Try to get the user's name from profile
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('first_name, last_name')
-            .eq('id', session.user.id)
-            .single();
-          
-          if (profile) {
-            const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+} ${profile.last_name || ''}`.trim();
             setUserName(fullName || session.user.email?.split('@')[0] || 'User');
           } else {
             setUserName(session.user.email?.split('@')[0] || 'User');
@@ -71,6 +53,7 @@ export function Navbar() {
 
     return () => {
       subscription.unsubscribe();
+      clearTimeout(timeoutId);
     };
   }, []);
 
