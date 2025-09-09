@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal, ConfirmModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { WizardTabs } from '@/components/ui/Tabs';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createBrowserClient } from '@/lib/supabase/client';
 import clsx from 'clsx';
 import type { Memorial, WizardStep, ServiceEvent, DonationInfo, GuestbookSettings, MediaItem } from '@/types/memorial';
 
@@ -42,7 +42,7 @@ interface MemorialWizardProps {
 
 export function MemorialWizard({ memorialId: propMemorialId, initialData }: MemorialWizardProps) {
   const router = useRouter();
-  const supabase = createClientComponentClient();
+  const supabase = createBrowserClient();
   const { showToast } = useToast();
   
   // Auto-save refs
