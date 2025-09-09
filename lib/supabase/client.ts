@@ -9,6 +9,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+// Singleton instance to avoid multiple clients
+let clientInstance: ReturnType<typeof createSupabaseBrowserClient> | null = null;
+
 /**
  * Helper to clear corrupted auth data
  */
@@ -43,14 +46,22 @@ export function clearAuthData() {
       }
     });
   }
+  
+  // Clear the singleton instance
+  clientInstance = null;
 }
 
 /**
  * Create a new Supabase browser client instance
- * This function creates a fresh client instance when needed
+ * Uses singleton pattern to avoid multiple clients
  */
 export function createBrowserClient() {
-  return createSupabaseBrowserClient<Database>(
+  // Return existing instance if available
+  if (clientInstance) {
+    return clientInstance;
+  }
+
+  clientInstance = createSupabaseBrowserClient<Database>(
     supabaseUrl,
     supabaseAnonKey,
     {
@@ -59,7 +70,7 @@ export function createBrowserClient() {
         autoRefreshToken: true,
         detectSessionInUrl: true,
         flowType: 'pkce',
-        storageKey: 'sb-gathermemorials-auth-token', // Fixed: Use a simple string without special characters
+        storageKey: 'sb-gathermemorials-auth-token',
         storage: {
           getItem: (key: string) => {
             if (typeof window === 'undefined') return null;
@@ -113,8 +124,76 @@ export function createBrowserClient() {
           'x-application-name': 'gathermemorials',
         },
       },
+      db: {
+        schema: 'public'
+      }
     }
   );
+
+  return clientInstance;
+}
+
+/**
+ * Get current user with retry logic and better error handling
+ */
+export async function getCurrentUser(maxRetries = 2) {
+  const supabase = createBrowserClient();
+  let retries = 0;
+  
+  while (retries <= maxRetries) {
+    try {
+      // First try to get session from local storage (faster)
+      const { data: { session }, error: sessionError } = await Promise.race([
+        supabase.auth.getSession(),
+        new Promise<any>((_, reject) => 
+          setTimeout(() => reject(new Error('Session timeout')), 8000)
+        )
+      ]).catch(err => ({ data: { session: null }, error: err }));
+      
+      if (session?.user) {
+        console.log('User found from session:', session.user.email);
+        return { user: session.user, error: null };
+      }
+      
+      // If no session or error, try getUser (makes API call)
+      const { data: { user }, error: userError } = await Promise.race([
+        supabase.auth.getUser(),
+        new Promise<any>((_, reject) => 
+          setTimeout(() => reject(new Error('User fetch timeout')), 8000)
+        )
+      ]).catch(err => ({ data: { user: null }, error: err }));
+      
+      if (user) {
+        console.log('User found from getUser:', user.email);
+        return { user, error: null };
+      }
+      
+      // If both failed and we have retries left, retry
+      if (retries < maxRetries) {
+        retries++;
+        console.log(`Auth attempt ${retries} failed, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        continue;
+      }
+      
+      // All attempts failed
+      return { 
+        user: null, 
+        error: userError || sessionError || new Error('No user found') 
+      };
+      
+    } catch (error) {
+      if (retries < maxRetries) {
+        retries++;
+        console.log(`Auth attempt ${retries} failed with error, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        continue;
+      }
+      return { user: null, error };
+    }
+  }
+  
+  return { user: null, error: new Error('Failed to get user after retries') };
 }
 
 /**
@@ -134,62 +213,111 @@ export function createServerClient(cookieStore?: any) {
 // Create a Supabase client for browser/client-side usage
 export const supabase = createBrowserClient();
 
-// Auth helper functions
+// Auth helper functions with better error handling
 export const auth = {
   // Sign up a new user
   async signUp(email: string, password: string, metadata?: Record<string, any>) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: metadata,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    return { data, error };
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: metadata,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      return { data, error };
+    } catch (error) {
+      console.error('SignUp error:', error);
+      return { data: null, error };
+    }
   },
 
   // Sign in existing user
   async signIn(email: string, password: string) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { data, error };
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      return { data, error };
+    } catch (error) {
+      console.error('SignIn error:', error);
+      return { data: null, error };
+    }
   },
 
   // Sign out current user
   async signOut() {
-    const { error } = await supabase.auth.signOut();
-    return { error };
+    try {
+      const { error } = await supabase.auth.signOut();
+      // Clear singleton instance on sign out
+      clientInstance = null;
+      return { error };
+    } catch (error) {
+      console.error('SignOut error:', error);
+      return { error };
+    }
   },
 
-  // Get current session
+  // Get current session with timeout
   async getSession() {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    return { session, error };
+    try {
+      const { data: { session }, error } = await Promise.race([
+        supabase.auth.getSession(),
+        new Promise<any>((_, reject) => 
+          setTimeout(() => reject(new Error('Session timeout')), 8000)
+        )
+      ]).catch(err => ({ data: { session: null }, error: err }));
+      
+      return { session, error };
+    } catch (error) {
+      console.error('GetSession error:', error);
+      return { session: null, error };
+    }
   },
 
-  // Get current user
+  // Get current user with timeout
   async getUser() {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    return { user, error };
+    try {
+      const { data: { user }, error } = await Promise.race([
+        supabase.auth.getUser(),
+        new Promise<any>((_, reject) => 
+          setTimeout(() => reject(new Error('User fetch timeout')), 8000)
+        )
+      ]).catch(err => ({ data: { user: null }, error: err }));
+      
+      return { user, error };
+    } catch (error) {
+      console.error('GetUser error:', error);
+      return { user: null, error };
+    }
   },
 
   // Reset password request
   async resetPassword(email: string) {
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    });
-    return { data, error };
+    try {
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
+      return { data, error };
+    } catch (error) {
+      console.error('ResetPassword error:', error);
+      return { data: null, error };
+    }
   },
 
   // Update password
   async updatePassword(newPassword: string) {
-    const { data, error } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
-    return { data, error };
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      return { data, error };
+    } catch (error) {
+      console.error('UpdatePassword error:', error);
+      return { data: null, error };
+    }
   },
 
   // Listen to auth state changes
@@ -328,7 +456,7 @@ export const db = {
   prayerLists: {
     async add(userId: string, memorialId: string, notes?: string) {
       const { data, error } = await supabase
-        .from('prayer_list')
+        .from('prayer_lists')
         .insert({
           user_id: userId,
           memorial_id: memorialId,
@@ -341,7 +469,7 @@ export const db = {
 
     async remove(userId: string, memorialId: string) {
       const { error } = await supabase
-        .from('prayer_list')
+        .from('prayer_lists')
         .delete()
         .eq('user_id', userId)
         .eq('memorial_id', memorialId);
@@ -350,7 +478,7 @@ export const db = {
 
     async getByUser(userId: string) {
       const { data, error } = await supabase
-        .from('prayer_list')
+        .from('prayer_lists')
         .select(`
           *,
           memorials (
@@ -369,11 +497,11 @@ export const db = {
 
     async check(userId: string, memorialId: string) {
       const { data, error } = await supabase
-        .from('prayer_list')
+        .from('prayer_lists')
         .select('id')
         .eq('user_id', userId)
         .eq('memorial_id', memorialId)
-        .single();
+        .maybeSingle();
       return { exists: !!data, error };
     },
   },
@@ -462,6 +590,12 @@ export const storage = {
     const { error } = await supabase.storage.from(bucket).remove(paths);
     return { error };
   },
+
+  // Download file from storage
+  async download(bucket: string, path: string) {
+    const { data, error } = await supabase.storage.from(bucket).download(path);
+    return { data, error };
+  },
 };
 
 // Real-time subscriptions
@@ -477,6 +611,23 @@ export const realtime = {
           schema: 'public',
           table: 'guestbook_entries',
           filter: `memorial_id=eq.${memorialId}`,
+        },
+        callback
+      )
+      .subscribe();
+  },
+
+  // Subscribe to memorial changes
+  subscribeToMemorial(memorialId: string, callback: (payload: any) => void) {
+    return supabase
+      .channel(`memorial:${memorialId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'memorials',
+          filter: `id=eq.${memorialId}`,
         },
         callback
       )

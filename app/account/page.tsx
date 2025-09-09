@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createBrowserClient } from '@/lib/supabase/client';
+import { createBrowserClient, getCurrentUser } from '@/lib/supabase/client';
 import Link from 'next/link';
 
 // Simplified type definitions - adjust based on your actual schema
@@ -64,54 +64,34 @@ export default function AccountDashboard() {
         setError('Loading is taking longer than expected. Please refresh the page.');
         setIsLoading(false);
       }
-    }, 10000); // 10 second timeout
+    }, 20000); // 20 second timeout - give more time for auth
 
     const initializeDashboard = async () => {
       try {
         console.log('Initializing dashboard...');
         
-        // Create Supabase client
-        const supabase = createBrowserClient();
-        
-        // Get current session with timeout
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Session check timeout')), 5000)
-        );
-        
-        const { data: { session }, error: sessionError } = await Promise.race([
-          sessionPromise,
-          timeoutPromise
-        ]).catch(err => {
-          console.error('Session check failed:', err);
-          return { data: { session: null }, error: err };
-        }) as any;
+        // Use the improved getCurrentUser helper with retry logic
+        const { user, error: authError } = await getCurrentUser();
         
         if (!mounted) return;
         
-        if (sessionError) {
-          console.error('Session error:', sessionError);
-          setError('Failed to load session. Please try signing in again.');
-          setIsLoading(false);
-          return;
-        }
-        
-        if (!session || !session.user) {
-          console.log('No session found, redirecting to signin');
+        if (authError || !user) {
+          console.log('Authentication failed:', authError?.message || 'No user found');
+          console.log('Redirecting to signin...');
           router.push('/auth/signin?redirect=/account');
           return;
         }
 
-        console.log('Session found for user:', session.user.email);
-        setUserId(session.user.id);
+        console.log('User authenticated:', user.email);
+        setUserId(user.id);
 
         // Load memorials first (they're needed for stats)
-        const memorialsData = await loadMemorials(session.user.id);
+        const memorialsData = await loadMemorials(user.id);
         
         if (!mounted) return;
         
         // Then load stats with the memorial data
-        await loadStats(session.user.id, memorialsData);
+        await loadStats(user.id, memorialsData);
         
         if (!mounted) return;
         
@@ -121,7 +101,7 @@ export default function AccountDashboard() {
       } catch (error) {
         console.error('Error initializing dashboard:', error);
         if (mounted) {
-          setError('Failed to load dashboard. Please refresh the page.');
+          setError('Failed to load dashboard. Please refresh the page or try signing in again.');
           setIsLoading(false);
         }
       }
@@ -309,6 +289,16 @@ export default function AccountDashboard() {
     }
   };
 
+  const handleSignOut = async () => {
+    try {
+      const supabase = createBrowserClient();
+      await supabase.auth.signOut();
+      router.push('/');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
   const filteredMemorials = memorials.filter(memorial => {
     if (activeTab === 'published') return memorial.status === 'published';
     if (activeTab === 'draft') return memorial.status === 'draft';
@@ -353,13 +343,13 @@ export default function AccountDashboard() {
           <div className="space-y-3">
             <button 
               onClick={() => window.location.reload()} 
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
             >
               Refresh Page
             </button>
             <Link 
               href="/auth/signin"
-              className="block w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-center"
+              className="block w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-center transition-colors"
             >
               Sign In Again
             </Link>
@@ -379,12 +369,23 @@ export default function AccountDashboard() {
               <h1 className="text-3xl font-bold text-gray-900">My Memorials</h1>
               <p className="mt-1 text-gray-600">Manage and monitor your memorial pages</p>
             </div>
-            <Link 
-              href="/memorials/new"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              Create New Memorial
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link 
+                href="/memorials/new"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create New Memorial
+              </Link>
+              <button
+                onClick={handleSignOut}
+                className="text-gray-600 hover:text-gray-900 text-sm"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -402,6 +403,23 @@ export default function AccountDashboard() {
             highlight={stats.pendingModeration > 0}
           />
         </div>
+
+        {/* Quick Actions */}
+        {stats.pendingModeration > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <svg className="h-5 w-5 text-amber-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="text-sm text-amber-800">
+                You have {stats.pendingModeration} guestbook {stats.pendingModeration === 1 ? 'entry' : 'entries'} pending moderation.
+              </p>
+              <Link href="/account/guestbook/pending" className="ml-auto text-sm text-amber-600 hover:text-amber-700 font-medium">
+                Review Now →
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Memorials Section */}
         <div className="bg-white rounded-lg shadow">
@@ -431,7 +449,8 @@ export default function AccountDashboard() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setViewMode('grid')}
-                    className={`p-2 rounded ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                    className={`p-2 rounded ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'} transition-colors`}
+                    aria-label="Grid view"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
@@ -439,7 +458,8 @@ export default function AccountDashboard() {
                   </button>
                   <button
                     onClick={() => setViewMode('list')}
-                    className={`p-2 rounded ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                    className={`p-2 rounded ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'} transition-colors`}
+                    aria-label="List view"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -459,12 +479,14 @@ export default function AccountDashboard() {
                     memorial={memorial}
                     viewMode={viewMode}
                     onEdit={() => router.push(`/memorials/new?id=${memorial.id}`)}
+                    onView={() => router.push(`/memorials/${memorial.id}`)}
                     onDelete={() => {
                       setSelectedMemorial(memorial);
                       setShowDeleteModal(true);
                     }}
                     onShare={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/memorials/${memorial.id}`);
+                      const url = `${window.location.origin}/memorials/${memorial.id}`;
+                      navigator.clipboard.writeText(url);
                       setToastMessage('Memorial link copied to clipboard');
                       setShowToast(true);
                     }}
@@ -510,7 +532,9 @@ function StatCard({ title, value, highlight = false }: { title: string; value: n
   return (
     <div className={`bg-white rounded-lg shadow p-6 ${highlight ? 'ring-2 ring-amber-500' : ''}`}>
       <p className="text-sm font-medium text-gray-600">{title}</p>
-      <p className={`mt-2 text-3xl font-semibold ${highlight ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
+      <p className={`mt-2 text-3xl font-semibold ${highlight ? 'text-amber-600' : 'text-gray-900'}`}>
+        {value.toLocaleString()}
+      </p>
     </div>
   );
 }
@@ -519,7 +543,7 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
   return (
     <button
       onClick={onClick}
-      className={`pb-4 px-1 border-b-2 font-medium text-sm ${
+      className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
         active 
           ? 'border-blue-500 text-blue-600' 
           : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -530,16 +554,24 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
   );
 }
 
-function MemorialCard({ memorial, viewMode, onEdit, onDelete, onShare, formatDate }: any) {
+function MemorialCard({ memorial, viewMode, onEdit, onView, onDelete, onShare, formatDate }: any) {
   if (viewMode === 'list') {
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
-              <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
+            <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+              {memorial.featured_image_url ? (
+                <img 
+                  src={memorial.featured_image_url} 
+                  alt={`${memorial.first_name} ${memorial.last_name}`}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              )}
             </div>
             <div>
               <h3 className="text-lg font-medium text-gray-900">
@@ -548,19 +580,27 @@ function MemorialCard({ memorial, viewMode, onEdit, onDelete, onShare, formatDat
               <p className="text-sm text-gray-500">
                 {formatDate(memorial.date_of_birth)} - {formatDate(memorial.date_of_death)}
               </p>
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                memorial.status === 'published' 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-yellow-100 text-yellow-800'
-              }`}>
-                {memorial.status === 'published' ? 'Published' : 'Draft'}
-              </span>
+              <div className="mt-1 flex items-center gap-2">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  memorial.status === 'published' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {memorial.status === 'published' ? 'Published' : 'Draft'}
+                </span>
+                {memorial.view_count > 0 && (
+                  <span className="text-xs text-gray-500">
+                    {memorial.view_count} views
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onEdit} className="p-2 text-gray-400 hover:text-gray-600">Edit</button>
-            <button onClick={onShare} className="p-2 text-gray-400 hover:text-gray-600">Share</button>
-            <button onClick={onDelete} className="p-2 text-gray-400 hover:text-red-600">Delete</button>
+            <button onClick={onView} className="p-2 text-gray-400 hover:text-gray-600 transition-colors">View</button>
+            <button onClick={onEdit} className="p-2 text-gray-400 hover:text-gray-600 transition-colors">Edit</button>
+            <button onClick={onShare} className="p-2 text-gray-400 hover:text-gray-600 transition-colors">Share</button>
+            <button onClick={onDelete} className="p-2 text-gray-400 hover:text-red-600 transition-colors">Delete</button>
           </div>
         </div>
       </div>
@@ -568,26 +608,50 @@ function MemorialCard({ memorial, viewMode, onEdit, onDelete, onShare, formatDat
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
-      <div className="w-full h-48 bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
-        <svg className="w-12 h-12 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all">
+      <div className="w-full h-48 bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center overflow-hidden">
+        {memorial.cover_photo_url || memorial.featured_image_url ? (
+          <img 
+            src={memorial.cover_photo_url || memorial.featured_image_url} 
+            alt={`${memorial.first_name} ${memorial.last_name}`}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <svg className="w-12 h-12 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        )}
       </div>
       <div className="p-4">
         <h3 className="text-lg font-semibold text-gray-900">
           {memorial.first_name} {memorial.last_name}
         </h3>
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-500 mb-2">
           {formatDate(memorial.date_of_birth)} - {formatDate(memorial.date_of_death)}
         </p>
-        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+        <div className="flex items-center justify-between mb-3">
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+            memorial.status === 'published' 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-yellow-100 text-yellow-800'
+          }`}>
+            {memorial.status === 'published' ? 'Published' : 'Draft'}
+          </span>
+          {memorial.view_count > 0 && (
+            <span className="text-xs text-gray-500">
+              {memorial.view_count} views
+            </span>
+          )}
+        </div>
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
           <div className="flex items-center gap-2">
-            <button onClick={onEdit} className="text-sm text-blue-600 hover:text-blue-700">Edit</button>
+            <button onClick={onView} className="text-sm text-blue-600 hover:text-blue-700 transition-colors">View</button>
             <span className="text-gray-300">•</span>
-            <button onClick={onShare} className="text-sm text-blue-600 hover:text-blue-700">Share</button>
+            <button onClick={onEdit} className="text-sm text-blue-600 hover:text-blue-700 transition-colors">Edit</button>
+            <span className="text-gray-300">•</span>
+            <button onClick={onShare} className="text-sm text-blue-600 hover:text-blue-700 transition-colors">Share</button>
           </div>
-          <button onClick={onDelete} className="text-sm text-red-600 hover:text-red-700">Delete</button>
+          <button onClick={onDelete} className="text-sm text-red-600 hover:text-red-700 transition-colors">Delete</button>
         </div>
       </div>
     </div>
@@ -605,8 +669,11 @@ function EmptyState({ title, description, actionLabel, onAction }: any) {
       <div className="mt-6">
         <button
           onClick={onAction}
-          className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+          className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors"
         >
+          <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
           {actionLabel}
         </button>
       </div>
@@ -632,7 +699,7 @@ function DeleteModal({ isOpen, onClose, onConfirm, memorialName }: any) {
                 <h3 className="text-base font-semibold leading-6 text-gray-900">Delete Memorial</h3>
                 <div className="mt-2">
                   <p className="text-sm text-gray-500">
-                    Are you sure you want to delete {memorialName}'s memorial? This action cannot be undone.
+                    Are you sure you want to delete {memorialName}'s memorial? This action cannot be undone and will permanently remove all associated content including photos, guestbook entries, and service information.
                   </p>
                 </div>
               </div>
@@ -640,14 +707,14 @@ function DeleteModal({ isOpen, onClose, onConfirm, memorialName }: any) {
             <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
               <button
                 type="button"
-                className="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto"
+                className="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto transition-colors"
                 onClick={onConfirm}
               >
                 Delete Memorial
               </button>
               <button
                 type="button"
-                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
                 onClick={onClose}
               >
                 Cancel
@@ -667,8 +734,13 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   }, [onClose]);
 
   return (
-    <div className="fixed bottom-4 right-4 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-      {message}
+    <div className="fixed bottom-4 right-4 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-fade-in-up">
+      <div className="flex items-center">
+        <svg className="w-5 h-5 mr-2 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        {message}
+      </div>
     </div>
   );
 }
