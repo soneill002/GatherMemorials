@@ -34,7 +34,22 @@ function SignInForm() {
 
   // Check for redirect parameter or success messages
   useEffect(() => {
-    // DON'T clear auth data automatically - only when there's an actual error
+    // Check if already authenticated
+    const checkExistingSession = async () => {
+      const supabase = createBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      // If already signed in and no specific redirect, go to account
+      if (session) {
+        const redirect = searchParams.get('redirect');
+        if (!redirect || redirect === '/auth/signin') {
+          router.push('/account');
+          return;
+        }
+      }
+    };
+    
+    checkExistingSession();
     
     const verified = searchParams.get('verified');
     const reset = searchParams.get('reset');
@@ -50,7 +65,7 @@ function SignInForm() {
     } else if (error === 'verification_failed') {
       setErrors({ general: 'Email verification failed. Please try again or contact support.' });
     }
-  }, [searchParams]);
+  }, [searchParams, router]);
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -89,9 +104,6 @@ function SignInForm() {
       // Create a fresh client instance
       const supabase = createBrowserClient();
 
-      // Don't sign out here - it might clear a valid session
-      // Only sign out if we get a specific error
-
       // Sign in the user
       const { data, error } = await supabase.auth.signInWithPassword({
         email: formData.email.trim().toLowerCase(),
@@ -127,18 +139,6 @@ function SignInForm() {
 
       console.log('Sign in successful, user:', data.user.email);
 
-      // Verify the session was set properly
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        console.error('Session not persisted after login');
-        setErrors({ general: 'Session error. Please try again.' });
-        setLoading(false);
-        return;
-      }
-
-      console.log('Session verified, checking profile...');
-
       // Check if profile exists, create if not
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -161,16 +161,14 @@ function SignInForm() {
           });
       }
 
-      // Wait a moment for session to propagate
-      await new Promise(resolve => setTimeout(resolve, 500));
-
       // Get redirect URL or default to account
       const redirectTo = searchParams.get('redirect') || '/account';
       
       console.log('Redirecting to:', redirectTo);
       
-      // Use window.location for hard navigation to ensure session is picked up
-      window.location.href = redirectTo;
+      // Use router.push for client-side navigation
+      // This is more reliable than window.location.href
+      router.push(redirectTo);
       
     } catch (error) {
       console.error('Unexpected sign in error:', error);
@@ -199,7 +197,7 @@ function SignInForm() {
         {/* Logo/Header */}
         <div className="text-center">
           <Link href="/">
-            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-marian-blue cursor-pointer hover:bg-blue-700 transition-colors">
+            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-600 cursor-pointer hover:bg-blue-700 transition-colors">
               <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
               </svg>
@@ -256,7 +254,7 @@ function SignInForm() {
                 onChange={(e) => handleInputChange('email', e.target.value)}
                 className={`mt-1 block w-full px-3 py-2 border ${
                   errors.email ? 'border-red-300' : 'border-gray-300'
-                } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-marian-blue focus:border-marian-blue sm:text-sm`}
+                } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-600 focus:border-blue-600 sm:text-sm`}
                 placeholder="john@example.com"
               />
               {errors.email && (
@@ -280,7 +278,7 @@ function SignInForm() {
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   className={`block w-full px-3 py-2 border ${
                     errors.password ? 'border-red-300' : 'border-gray-300'
-                  } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-marian-blue focus:border-marian-blue sm:text-sm pr-10`}
+                  } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-600 focus:border-blue-600 sm:text-sm pr-10`}
                   placeholder="••••••••"
                 />
                 <button
@@ -314,7 +312,7 @@ function SignInForm() {
                   type="checkbox"
                   checked={formData.rememberMe}
                   onChange={(e) => handleInputChange('rememberMe', e.target.checked)}
-                  className="h-4 w-4 text-marian-blue focus:ring-marian-blue border-gray-300 rounded"
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-600 border-gray-300 rounded"
                 />
                 <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-900">
                   Remember me
@@ -324,7 +322,7 @@ function SignInForm() {
               <div className="text-sm">
                 <Link
                   href="/auth/reset-password"
-                  className="font-medium text-marian-blue hover:text-blue-700"
+                  className="font-medium text-blue-600 hover:text-blue-700"
                 >
                   Forgot your password?
                 </Link>
@@ -359,23 +357,25 @@ function SignInForm() {
             <div className="text-center">
               <Link
                 href="/auth/signup"
-                className="font-medium text-marian-blue hover:text-blue-700"
+                className="font-medium text-blue-600 hover:text-blue-700"
               >
                 Create an account
               </Link>
             </div>
           </form>
 
-          {/* Troubleshooting button - always visible now */}
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={handleClearCache}
-              className="text-xs text-gray-500 hover:text-gray-700 underline"
-            >
-              Having trouble signing in? Clear cache and try again
-            </button>
-          </div>
+          {/* Troubleshooting button - only show when there's an error */}
+          {(errors.general || loading) && (
+            <div className="mt-6 text-center">
+              <button
+                type="button"
+                onClick={handleClearCache}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Having trouble? Clear cache and try again
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Quick Access Links */}
@@ -384,21 +384,21 @@ function SignInForm() {
           <div className="flex justify-center space-x-4 text-sm">
             <Link
               href="/how-it-works"
-              className="text-marian-blue hover:text-blue-700"
+              className="text-blue-600 hover:text-blue-700"
             >
               How it works
             </Link>
             <span className="text-gray-300">•</span>
             <Link
               href="/pricing"
-              className="text-marian-blue hover:text-blue-700"
+              className="text-blue-600 hover:text-blue-700"
             >
               Pricing
             </Link>
             <span className="text-gray-300">•</span>
             <Link
               href="/faq"
-              className="text-marian-blue hover:text-blue-700"
+              className="text-blue-600 hover:text-blue-700"
             >
               FAQ
             </Link>
@@ -428,7 +428,7 @@ export default function SignInPage() {
           <div className="sm:mx-auto sm:w-full sm:max-w-md">
             <div className="bg-white py-8 px-4 shadow-lg sm:rounded-lg sm:px-10 border border-gray-100">
               <div className="flex justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-marian-blue"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               </div>
               <p className="mt-4 text-center text-sm text-gray-600">Loading...</p>
             </div>
