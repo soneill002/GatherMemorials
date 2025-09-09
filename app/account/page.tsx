@@ -55,44 +55,85 @@ export default function AccountDashboard() {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    checkAuthAndLoadData();
-  }, []);
-
-  const checkAuthAndLoadData = async () => {
-    try {
-      console.log('Checking authentication...');
-      const supabase = createBrowserClient();
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Session error:', sessionError);
-        setError('Failed to load session. Please try signing in again.');
+    let mounted = true;
+    
+    // Set a timeout to prevent infinite loading
+    const loadingTimeout = setTimeout(() => {
+      if (mounted && isLoading) {
+        console.log('Loading timeout reached');
+        setError('Loading is taking longer than expected. Please refresh the page.');
         setIsLoading(false);
-        return;
       }
-      
-      if (!session || !session.user) {
-        console.log('No session found, redirecting to signin');
-        router.push('/auth/signin?redirect=/account');
-        return;
+    }, 10000); // 10 second timeout
+
+    const initializeDashboard = async () => {
+      try {
+        console.log('Initializing dashboard...');
+        
+        // Create Supabase client
+        const supabase = createBrowserClient();
+        
+        // Get current session with timeout
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Session check timeout')), 5000)
+        );
+        
+        const { data: { session }, error: sessionError } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]).catch(err => {
+          console.error('Session check failed:', err);
+          return { data: { session: null }, error: err };
+        }) as any;
+        
+        if (!mounted) return;
+        
+        if (sessionError) {
+          console.error('Session error:', sessionError);
+          setError('Failed to load session. Please try signing in again.');
+          setIsLoading(false);
+          return;
+        }
+        
+        if (!session || !session.user) {
+          console.log('No session found, redirecting to signin');
+          router.push('/auth/signin?redirect=/account');
+          return;
+        }
+
+        console.log('Session found for user:', session.user.email);
+        setUserId(session.user.id);
+
+        // Load memorials first (they're needed for stats)
+        const memorialsData = await loadMemorials(session.user.id);
+        
+        if (!mounted) return;
+        
+        // Then load stats with the memorial data
+        await loadStats(session.user.id, memorialsData);
+        
+        if (!mounted) return;
+        
+        console.log('Dashboard initialization complete');
+        setIsLoading(false);
+        
+      } catch (error) {
+        console.error('Error initializing dashboard:', error);
+        if (mounted) {
+          setError('Failed to load dashboard. Please refresh the page.');
+          setIsLoading(false);
+        }
       }
+    };
 
-      console.log('Session found for user:', session.user.email);
-      setUserId(session.user.id);
+    initializeDashboard();
 
-      // Load data in parallel but with error handling for each
-      await Promise.allSettled([
-        loadMemorials(session.user.id),
-        loadStats(session.user.id)
-      ]);
-
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Error in checkAuthAndLoadData:', error);
-      setError('An unexpected error occurred. Please refresh the page.');
-      setIsLoading(false);
-    }
-  };
+    return () => {
+      mounted = false;
+      clearTimeout(loadingTimeout);
+    };
+  }, [router]);
 
   const loadMemorials = async (userId: string) => {
     try {
@@ -106,7 +147,13 @@ export default function AccountDashboard() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error loading memorials:', error);
+        // Check if it's a "table doesn't exist" error
+        if (error.code === '42P01') {
+          console.error('Memorials table does not exist');
+          setError('Database is not properly configured. Please contact support.');
+          return [];
+        }
+        
         // Don't throw - user might not have memorials yet
         if (error.code !== 'PGRST116') { // Not a "no rows" error
           console.error('Memorial loading error:', error.message);
@@ -125,16 +172,21 @@ export default function AccountDashboard() {
     }
   };
 
-  const loadStats = async (userId: string, memorialsData?: any[]) => {
+  const loadStats = async (userId: string, memorialsData?: Memorial[]) => {
     try {
       console.log('Loading stats for user:', userId);
       const supabase = createBrowserClient();
       
-      // Use passed memorial data or empty array
-      const memorialsToUse = memorialsData || [];
+      // Use passed memorial data or the state
+      const memorialsToUse = memorialsData || memorials;
       
-      // Load memorial stats
-      const memorialStats = await loadMemorialStats(supabase, userId);
+      // Calculate memorial stats from the data we already have
+      const memorialStats = {
+        total: memorialsToUse.length,
+        published: memorialsToUse.filter(m => m.status === 'published').length,
+        draft: memorialsToUse.filter(m => m.status === 'draft').length,
+        views: memorialsToUse.reduce((sum, m) => sum + (m.view_count || 0), 0)
+      };
       
       // Load guestbook stats (only if there are memorials)
       const guestbookStats = memorialsToUse.length > 0 
@@ -156,33 +208,17 @@ export default function AccountDashboard() {
     } catch (error) {
       console.error('Error loading stats:', error);
       // Don't fail the whole page if stats fail to load
-    }
-  };
-
-  const loadMemorialStats = async (supabase: any, userId: string) => {
-    try {
-      // Get all memorials for counts and views
-      const { data: allMemorials, error } = await supabase
-        .from('memorials')
-        .select('status, view_count')
-        .eq('user_id', userId);
-
-      if (error) {
-        console.error('Error loading memorial stats:', error);
-        return { total: 0, published: 0, draft: 0, views: 0 };
-      }
-
-      const stats = {
-        total: allMemorials?.length || 0,
-        published: allMemorials?.filter(m => m.status === 'published').length || 0,
-        draft: allMemorials?.filter(m => m.status === 'draft').length || 0,
-        views: allMemorials?.reduce((sum, m) => sum + (m.view_count || 0), 0) || 0
-      };
-
-      return stats;
-    } catch (error) {
-      console.error('Error in loadMemorialStats:', error);
-      return { total: 0, published: 0, draft: 0, views: 0 };
+      // Use the memorial data we have for basic stats
+      const memorialsToUse = memorialsData || memorials;
+      setStats({
+        totalMemorials: memorialsToUse.length,
+        publishedMemorials: memorialsToUse.filter(m => m.status === 'published').length,
+        draftMemorials: memorialsToUse.filter(m => m.status === 'draft').length,
+        totalViews: memorialsToUse.reduce((sum, m) => sum + (m.view_count || 0), 0),
+        totalGuestbookEntries: 0,
+        pendingModeration: 0,
+        prayerListCount: 0
+      });
     }
   };
 
@@ -193,17 +229,27 @@ export default function AccountDashboard() {
 
     try {
       // Get total entries
-      const { count: totalEntries } = await supabase
+      const { count: totalEntries, error: totalError } = await supabase
         .from('guestbook_entries')
         .select('*', { count: 'exact', head: true })
         .in('memorial_id', memorialIds);
 
+      if (totalError) {
+        console.error('Error loading total guestbook entries:', totalError);
+        return { totalEntries: 0, pendingCount: 0 };
+      }
+
       // Get pending entries
-      const { count: pendingCount } = await supabase
+      const { count: pendingCount, error: pendingError } = await supabase
         .from('guestbook_entries')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'pending')
         .in('memorial_id', memorialIds);
+
+      if (pendingError) {
+        console.error('Error loading pending guestbook entries:', pendingError);
+        return { totalEntries: totalEntries || 0, pendingCount: 0 };
+      }
 
       return {
         totalEntries: totalEntries || 0,
@@ -217,10 +263,15 @@ export default function AccountDashboard() {
 
   const loadPrayerListCount = async (supabase: any, userId: string) => {
     try {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from('prayer_lists')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error loading prayer list count:', error);
+        return 0;
+      }
 
       return count || 0;
     } catch (error) {
@@ -248,10 +299,9 @@ export default function AccountDashboard() {
       setShowDeleteModal(false);
       setSelectedMemorial(null);
       
-      // Reload stats
-      if (userId) {
-        loadStats(userId);
-      }
+      // Update stats
+      const updatedMemorials = memorials.filter(m => m.id !== selectedMemorial.id);
+      await loadStats(userId, updatedMemorials);
     } catch (error) {
       console.error('Error deleting memorial:', error);
       setToastMessage('Failed to delete memorial');
@@ -285,6 +335,7 @@ export default function AccountDashboard() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+          <p className="mt-2 text-sm text-gray-500">This may take a few moments</p>
         </div>
       </div>
     );
@@ -454,7 +505,7 @@ export default function AccountDashboard() {
   );
 }
 
-// Component definitions remain the same...
+// Component definitions
 function StatCard({ title, value, highlight = false }: { title: string; value: number; highlight?: boolean }) {
   return (
     <div className={`bg-white rounded-lg shadow p-6 ${highlight ? 'ring-2 ring-amber-500' : ''}`}>
