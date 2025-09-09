@@ -29,6 +29,7 @@ export default function AccountDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const hasInitialized = useRef(false);
+  const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Prevent multiple initializations
@@ -44,36 +45,127 @@ export default function AccountDashboard() {
         // Create Supabase client
         const supabase = createBrowserClient();
         
-        // Use getUser instead of getSession to avoid hanging
-        console.log('Dashboard: Getting user...');
-        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError) {
-          console.error('Dashboard: User error:', userError);
-          // Clear any corrupted auth data
-          if (userError.message?.includes('session') || userError.message?.includes('token')) {
-            console.log('Dashboard: Clearing auth data and redirecting...');
-            await supabase.auth.signOut();
+        // Set a timeout for the entire initialization process
+        initTimeoutRef.current = setTimeout(() => {
+          console.log('Dashboard: Init timeout reached, checking localStorage fallback...');
+          
+          // Try to get user info from localStorage as a fallback
+          const authToken = localStorage.getItem('sb-gathermemorials-auth-token');
+          if (authToken) {
+            try {
+              const parsed = JSON.parse(authToken);
+              if (parsed && parsed.user) {
+                console.log('Dashboard: Found user in localStorage, using that');
+                setUser(parsed.user);
+                loadMemorialsForUser(parsed.user.id);
+                return;
+              }
+            } catch (e) {
+              console.error('Dashboard: Failed to parse localStorage auth:', e);
+            }
           }
-          router.push('/auth/signin?redirect=/account');
-          return;
+          
+          console.log('Dashboard: No valid auth found, redirecting to signin');
+          setError('Session expired. Please sign in again.');
+          setTimeout(() => {
+            router.push('/auth/signin?redirect=/account');
+          }, 2000);
+        }, 5000); // 5 second timeout
+        
+        // Try multiple approaches to get the user
+        console.log('Dashboard: Attempting to get user...');
+        
+        // First try: getUser with a Promise.race for timeout
+        const getUserPromise = supabase.auth.getUser();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('getUser timeout')), 4000)
+        );
+        
+        try {
+          const result = await Promise.race([getUserPromise, timeoutPromise]);
+          const { data: { user: currentUser }, error: userError } = result as any;
+          
+          // Clear the timeout since we got a response
+          if (initTimeoutRef.current) {
+            clearTimeout(initTimeoutRef.current);
+            initTimeoutRef.current = null;
+          }
+          
+          if (userError) {
+            console.error('Dashboard: User error:', userError);
+            
+            // Try refreshing the session
+            console.log('Dashboard: Attempting session refresh...');
+            const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+            
+            if (session && session.user) {
+              console.log('Dashboard: Session refreshed successfully');
+              setUser(session.user);
+              await loadMemorialsForUser(session.user.id);
+              return;
+            }
+            
+            // If refresh failed, clear auth and redirect
+            await supabase.auth.signOut();
+            router.push('/auth/signin?redirect=/account');
+            return;
+          }
+          
+          if (!currentUser) {
+            console.log('Dashboard: No user found, redirecting to sign in');
+            router.push('/auth/signin?redirect=/account');
+            return;
+          }
+          
+          console.log('Dashboard: User found:', currentUser.email);
+          setUser(currentUser);
+          await loadMemorialsForUser(currentUser.id);
+          
+        } catch (timeoutError) {
+          console.log('Dashboard: getUser timed out, trying getSession...');
+          
+          // Fallback: Try getSession instead
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          
+          // Clear the timeout
+          if (initTimeoutRef.current) {
+            clearTimeout(initTimeoutRef.current);
+            initTimeoutRef.current = null;
+          }
+          
+          if (session && session.user) {
+            console.log('Dashboard: Got user from session:', session.user.email);
+            setUser(session.user);
+            await loadMemorialsForUser(session.user.id);
+          } else {
+            console.log('Dashboard: No session found, redirecting to signin');
+            router.push('/auth/signin?redirect=/account');
+          }
         }
         
-        if (!currentUser) {
-          console.log('Dashboard: No user found, redirecting to sign in');
-          router.push('/auth/signin?redirect=/account');
-          return;
+      } catch (error) {
+        console.error('Dashboard: Unexpected error:', error);
+        
+        // Clear the timeout
+        if (initTimeoutRef.current) {
+          clearTimeout(initTimeoutRef.current);
+          initTimeoutRef.current = null;
         }
         
-        console.log('Dashboard: User found:', currentUser.email);
-        setUser(currentUser);
+        setError('Failed to load dashboard. Please try refreshing the page.');
+        setIsLoading(false);
+      }
+    };
+    
+    const loadMemorialsForUser = async (userId: string) => {
+      try {
+        const supabase = createBrowserClient();
+        console.log('Dashboard: Loading memorials for user:', userId);
         
-        // Load memorials for the authenticated user
-        console.log('Dashboard: Loading memorials for user:', currentUser.id);
         const { data: memorialsData, error: memorialsError } = await supabase
           .from('memorials')
           .select('*')
-          .eq('user_id', currentUser.id)
+          .eq('user_id', userId)
           .order('created_at', { ascending: false });
         
         if (memorialsError) {
@@ -86,10 +178,9 @@ export default function AccountDashboard() {
         
         setIsLoading(false);
         console.log('Dashboard: Initialization complete');
-        
       } catch (error) {
-        console.error('Dashboard: Unexpected error:', error);
-        setError('Failed to load dashboard. Please try refreshing the page.');
+        console.error('Dashboard: Error in loadMemorialsForUser:', error);
+        setError('Failed to load memorials.');
         setIsLoading(false);
       }
     };
@@ -105,11 +196,13 @@ export default function AccountDashboard() {
       if (event === 'SIGNED_OUT') {
         router.push('/auth/signin');
       }
-      // Don't re-initialize on SIGNED_IN if we already have a user
     });
 
     // Cleanup function
     return () => {
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+      }
       subscription.unsubscribe();
     };
   }, []); // Empty dependency array - only run once on mount
@@ -125,6 +218,9 @@ export default function AccountDashboard() {
       if (error) {
         console.error('Error signing out:', error);
       }
+      
+      // Clear localStorage
+      localStorage.removeItem('sb-gathermemorials-auth-token');
       
       // Redirect to home page
       router.push('/');
@@ -179,6 +275,7 @@ export default function AccountDashboard() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+          <p className="mt-2 text-sm text-gray-500">This may take a moment...</p>
         </div>
       </div>
     );
