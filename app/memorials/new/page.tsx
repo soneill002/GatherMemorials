@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createBrowserClient } from '@/lib/supabase/client';
 import { MemorialWizard } from '@/features/memorials/components/MemorialWizard';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
@@ -10,7 +10,7 @@ import Link from 'next/link';
 function NewMemorialContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createClientComponentClient();
+const supabase = createBrowserClient();
   
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
