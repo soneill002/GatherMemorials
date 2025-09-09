@@ -9,9 +9,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-// Singleton instance to avoid multiple clients
-let clientInstance: ReturnType<typeof createSupabaseBrowserClient> | null = null;
-
 /**
  * Helper to clear corrupted auth data
  */
@@ -46,22 +43,16 @@ export function clearAuthData() {
       }
     });
   }
-  
-  // Clear the singleton instance
-  clientInstance = null;
 }
 
 /**
  * Create a new Supabase browser client instance
- * Uses singleton pattern to avoid multiple clients
+ * Always creates a fresh instance to avoid state corruption issues
  */
 export function createBrowserClient() {
-  // Return existing instance if available
-  if (clientInstance) {
-    return clientInstance;
-  }
-
-  clientInstance = createSupabaseBrowserClient<Database>(
+  // Always create a fresh instance - no singleton
+  // The Supabase SDK handles connection pooling internally
+  return createSupabaseBrowserClient<Database>(
     supabaseUrl,
     supabaseAnonKey,
     {
@@ -129,71 +120,29 @@ export function createBrowserClient() {
       }
     }
   );
-
-  return clientInstance;
 }
 
 /**
- * Get current user with retry logic and better error handling
+ * Get current user with better error handling - no hanging
  */
-export async function getCurrentUser(maxRetries = 2) {
-  const supabase = createBrowserClient();
-  let retries = 0;
-  
-  while (retries <= maxRetries) {
-    try {
-      // First try to get session from local storage (faster)
-      const { data: { session }, error: sessionError } = await Promise.race([
-        supabase.auth.getSession(),
-        new Promise<any>((_, reject) => 
-          setTimeout(() => reject(new Error('Session timeout')), 8000)
-        )
-      ]).catch(err => ({ data: { session: null }, error: err }));
-      
-      if (session?.user) {
-        console.log('User found from session:', session.user.email);
-        return { user: session.user, error: null };
-      }
-      
-      // If no session or error, try getUser (makes API call)
-      const { data: { user }, error: userError } = await Promise.race([
-        supabase.auth.getUser(),
-        new Promise<any>((_, reject) => 
-          setTimeout(() => reject(new Error('User fetch timeout')), 8000)
-        )
-      ]).catch(err => ({ data: { user: null }, error: err }));
-      
-      if (user) {
-        console.log('User found from getUser:', user.email);
-        return { user, error: null };
-      }
-      
-      // If both failed and we have retries left, retry
-      if (retries < maxRetries) {
-        retries++;
-        console.log(`Auth attempt ${retries} failed, retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        continue;
-      }
-      
-      // All attempts failed
-      return { 
-        user: null, 
-        error: userError || sessionError || new Error('No user found') 
-      };
-      
-    } catch (error) {
-      if (retries < maxRetries) {
-        retries++;
-        console.log(`Auth attempt ${retries} failed with error, retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        continue;
-      }
+export async function getCurrentUser() {
+  try {
+    const supabase = createBrowserClient();
+    
+    // Skip getSession and go straight to getUser
+    // This avoids the hanging issue with getSession
+    const { data: { user }, error } = await supabase.auth.getUser();
+    
+    if (error) {
+      console.error('getCurrentUser error:', error);
       return { user: null, error };
     }
+    
+    return { user, error: null };
+  } catch (error) {
+    console.error('getCurrentUser unexpected error:', error);
+    return { user: null, error };
   }
-  
-  return { user: null, error: new Error('Failed to get user after retries') };
 }
 
 /**
@@ -210,14 +159,12 @@ export function createServerClient(cookieStore?: any) {
   return createBrowserClient();
 }
 
-// Create a Supabase client for browser/client-side usage
-export const supabase = createBrowserClient();
-
 // Auth helper functions with better error handling
 export const auth = {
   // Sign up a new user
   async signUp(email: string, password: string, metadata?: Record<string, any>) {
     try {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -236,6 +183,7 @@ export const auth = {
   // Sign in existing user
   async signIn(email: string, password: string) {
     try {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -250,9 +198,8 @@ export const auth = {
   // Sign out current user
   async signOut() {
     try {
+      const supabase = createBrowserClient();
       const { error } = await supabase.auth.signOut();
-      // Clear singleton instance on sign out
-      clientInstance = null;
       return { error };
     } catch (error) {
       console.error('SignOut error:', error);
@@ -260,16 +207,11 @@ export const auth = {
     }
   },
 
-  // Get current session with timeout
+  // Get current session
   async getSession() {
     try {
-      const { data: { session }, error } = await Promise.race([
-        supabase.auth.getSession(),
-        new Promise<any>((_, reject) => 
-          setTimeout(() => reject(new Error('Session timeout')), 8000)
-        )
-      ]).catch(err => ({ data: { session: null }, error: err }));
-      
+      const supabase = createBrowserClient();
+      const { data: { session }, error } = await supabase.auth.getSession();
       return { session, error };
     } catch (error) {
       console.error('GetSession error:', error);
@@ -277,16 +219,11 @@ export const auth = {
     }
   },
 
-  // Get current user with timeout
+  // Get current user
   async getUser() {
     try {
-      const { data: { user }, error } = await Promise.race([
-        supabase.auth.getUser(),
-        new Promise<any>((_, reject) => 
-          setTimeout(() => reject(new Error('User fetch timeout')), 8000)
-        )
-      ]).catch(err => ({ data: { user: null }, error: err }));
-      
+      const supabase = createBrowserClient();
+      const { data: { user }, error } = await supabase.auth.getUser();
       return { user, error };
     } catch (error) {
       console.error('GetUser error:', error);
@@ -297,6 +234,7 @@ export const auth = {
   // Reset password request
   async resetPassword(email: string) {
     try {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       });
@@ -310,6 +248,7 @@ export const auth = {
   // Update password
   async updatePassword(newPassword: string) {
     try {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase.auth.updateUser({
         password: newPassword,
       });
@@ -322,6 +261,7 @@ export const auth = {
 
   // Listen to auth state changes
   onAuthStateChange(callback: (event: string, session: any) => void) {
+    const supabase = createBrowserClient();
     return supabase.auth.onAuthStateChange(callback);
   },
 };
@@ -331,6 +271,7 @@ export const db = {
   // Profiles
   profiles: {
     async get(userId: string) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -340,6 +281,7 @@ export const db = {
     },
 
     async update(userId: string, updates: Record<string, any>) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('profiles')
         .update(updates)
@@ -353,6 +295,7 @@ export const db = {
   // Memorials
   memorials: {
     async create(memorial: Record<string, any>) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('memorials')
         .insert(memorial)
@@ -362,6 +305,7 @@ export const db = {
     },
 
     async get(memorialId: string) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('memorials')
         .select(`
@@ -376,6 +320,7 @@ export const db = {
     },
 
     async update(memorialId: string, updates: Record<string, any>) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('memorials')
         .update(updates)
@@ -386,6 +331,7 @@ export const db = {
     },
 
     async delete(memorialId: string) {
+      const supabase = createBrowserClient();
       const { error } = await supabase
         .from('memorials')
         .delete()
@@ -394,6 +340,7 @@ export const db = {
     },
 
     async listByUser(userId: string) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('memorials')
         .select('*')
@@ -403,6 +350,7 @@ export const db = {
     },
 
     async publish(memorialId: string) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('memorials')
         .update({ 
@@ -419,6 +367,7 @@ export const db = {
   // Guestbook
   guestbook: {
     async create(entry: Record<string, any>) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('guestbook_entries')
         .insert(entry)
@@ -428,6 +377,7 @@ export const db = {
     },
 
     async getByMemorial(memorialId: string, status = 'approved') {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('guestbook_entries')
         .select('*')
@@ -438,6 +388,7 @@ export const db = {
     },
 
     async moderate(entryId: string, status: 'approved' | 'rejected', moderatorId: string) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('guestbook_entries')
         .update({ 
@@ -455,6 +406,7 @@ export const db = {
   // Prayer Lists
   prayerLists: {
     async add(userId: string, memorialId: string, notes?: string) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('prayer_lists')
         .insert({
@@ -468,6 +420,7 @@ export const db = {
     },
 
     async remove(userId: string, memorialId: string) {
+      const supabase = createBrowserClient();
       const { error } = await supabase
         .from('prayer_lists')
         .delete()
@@ -477,6 +430,7 @@ export const db = {
     },
 
     async getByUser(userId: string) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('prayer_lists')
         .select(`
@@ -496,6 +450,7 @@ export const db = {
     },
 
     async check(userId: string, memorialId: string) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('prayer_lists')
         .select('id')
@@ -509,6 +464,7 @@ export const db = {
   // Services
   services: {
     async create(services: Record<string, any>[]) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('memorial_services')
         .insert(services)
@@ -517,6 +473,7 @@ export const db = {
     },
 
     async update(serviceId: string, updates: Record<string, any>) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('memorial_services')
         .update(updates)
@@ -527,6 +484,7 @@ export const db = {
     },
 
     async delete(serviceId: string) {
+      const supabase = createBrowserClient();
       const { error } = await supabase
         .from('memorial_services')
         .delete()
@@ -538,6 +496,7 @@ export const db = {
   // Gallery/Media
   gallery: {
     async upload(memorialId: string, items: Record<string, any>[]) {
+      const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('memorial_media')
         .insert(items.map(item => ({ ...item, memorial_id: memorialId })))
@@ -546,6 +505,7 @@ export const db = {
     },
 
     async delete(itemId: string) {
+      const supabase = createBrowserClient();
       const { error } = await supabase
         .from('memorial_media')
         .delete()
@@ -554,6 +514,7 @@ export const db = {
     },
 
     async reorder(items: { id: string; order_index: number }[]) {
+      const supabase = createBrowserClient();
       const updates = items.map(item => 
         supabase
           .from('memorial_media')
@@ -570,6 +531,7 @@ export const db = {
 export const storage = {
   // Upload file to storage bucket
   async upload(bucket: string, path: string, file: File) {
+    const supabase = createBrowserClient();
     const { data, error } = await supabase.storage
       .from(bucket)
       .upload(path, file, {
@@ -581,18 +543,21 @@ export const storage = {
 
   // Get public URL for file
   getPublicUrl(bucket: string, path: string) {
+    const supabase = createBrowserClient();
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);
     return data.publicUrl;
   },
 
   // Delete file from storage
   async delete(bucket: string, paths: string[]) {
+    const supabase = createBrowserClient();
     const { error } = await supabase.storage.from(bucket).remove(paths);
     return { error };
   },
 
   // Download file from storage
   async download(bucket: string, path: string) {
+    const supabase = createBrowserClient();
     const { data, error } = await supabase.storage.from(bucket).download(path);
     return { data, error };
   },
@@ -602,6 +567,7 @@ export const storage = {
 export const realtime = {
   // Subscribe to guestbook changes
   subscribeToGuestbook(memorialId: string, callback: (payload: any) => void) {
+    const supabase = createBrowserClient();
     return supabase
       .channel(`guestbook:${memorialId}`)
       .on(
@@ -619,6 +585,7 @@ export const realtime = {
 
   // Subscribe to memorial changes
   subscribeToMemorial(memorialId: string, callback: (payload: any) => void) {
+    const supabase = createBrowserClient();
     return supabase
       .channel(`memorial:${memorialId}`)
       .on(
@@ -636,8 +603,13 @@ export const realtime = {
 
   // Unsubscribe from channel
   unsubscribe(channel: any) {
+    const supabase = createBrowserClient();
     return supabase.removeChannel(channel);
   },
 };
+
+// For backwards compatibility - create a default instance
+// But note that each function now creates its own client
+export const supabase = createBrowserClient();
 
 export default supabase;
