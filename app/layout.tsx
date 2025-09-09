@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, Playfair_Display } from 'next/font/google'
 import Link from 'next/link'
+import { Navbar } from '@/components/layout/Navbar'
 import './globals.css'
 
 // Load fonts
@@ -63,74 +64,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${playfair.variable}`}>
       <body className="font-sans antialiased bg-vatican-50 text-vatican-900 min-h-screen flex flex-col">
-        {/* Navigation */}
-        <nav className="border-b border-vatican-200 bg-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16 items-center">
-              {/* Left side - Logo and Nav Links */}
-              <div className="flex items-center space-x-8">
-                <div className="flex-shrink-0">
-                  {/* Clickable Logo */}
-                  <Link 
-                    href="/" 
-                    className="font-serif text-2xl text-marian-500 hover:text-marian-600 transition-colors duration-200"
-                  >
-                    GatherMemorials
-                  </Link>
-                </div>
-                <div className="hidden sm:flex sm:space-x-8">
-                  <Link 
-                    href="/" 
-                    className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
-                  >
-                    Home
-                  </Link>
-                  <Link 
-                    href="/how-it-works" 
-                    className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
-                  >
-                    How It Works
-                  </Link>
-                  <Link 
-                    href="/pricing" 
-                    className="text-vatican-700 hover:text-marian-500 px-3 py-2 text-sm font-medium transition-colors duration-200"
-                  >
-                    Pricing
-                  </Link>
-                </div>
-              </div>
-
-              {/* Right side - Auth Buttons */}
-              <div className="hidden sm:flex sm:items-center sm:space-x-3">
-                <Link 
-                  href="/auth/signin" 
-                  className="text-vatican-700 hover:text-marian-500 px-4 py-2 text-sm font-medium transition-colors duration-200 border border-vatican-300 rounded-md hover:border-marian-500"
-                >
-                  Log In
-                </Link>
-                <Link 
-                  href="/auth/signup" 
-                  className="bg-marian-500 text-white hover:bg-marian-600 px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200"
-                >
-                  Sign Up
-                </Link>
-              </div>
-
-              {/* Mobile menu button */}
-              <div className="sm:hidden">
-                <button 
-                  type="button" 
-                  className="text-vatican-700 hover:text-marian-500 p-2"
-                  aria-label="Open menu"
-                >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </nav>
+        {/* Navigation - Now using the dynamic Navbar component */}
+        <Navbar />
 
         {/* Main content */}
         <main className="flex-grow">
