@@ -16,89 +16,102 @@ export function useAuth(options: UseAuthOptions = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const checkAuth = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Create a fresh Supabase client
-      const supabase = createBrowserClient();
-      
-      // Try to get user with a timeout
-      const userPromise = supabase.auth.getUser();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Auth check timeout')), 3000)
-      );
-      
-      try {
-        const { data: { user: currentUser } } = await Promise.race([
-          userPromise,
-          timeoutPromise
-        ]) as any;
-        
-        if (currentUser) {
-          setUser(currentUser);
-          return currentUser;
-        }
-      } catch (timeoutError) {
-        console.log('Auth check timed out, trying session...');
-      }
-      
-      // Fallback to session if getUser fails or times out
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        setUser(session.user);
-        return session.user;
-      }
-      
-      // No user found
-      if (requireAuth) {
-        const redirect = `${redirectTo}?redirect=${encodeURIComponent(window.location.pathname)}`;
-        router.push(redirect);
-      }
-      
-      return null;
-    } catch (err) {
-      console.error('Auth check error:', err);
-      setError('Failed to check authentication');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [requireAuth, redirectTo, router]);
-
   useEffect(() => {
     let mounted = true;
     
-    const initialize = async () => {
-      if (mounted) {
-        await checkAuth();
+    const checkAuth = async () => {
+      try {
+        console.log('useAuth: Starting auth check...');
+        
+        // Create a fresh Supabase client
+        const supabase = createBrowserClient();
+        
+        // Try getSession first (more reliable)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+        
+        if (session?.user) {
+          console.log('useAuth: Found user from session:', session.user.email);
+          setUser(session.user);
+          setLoading(false);
+          return;
+        }
+        
+        // If no session, try getUser as fallback
+        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+        
+        if (!mounted) return;
+        
+        if (currentUser) {
+          console.log('useAuth: Found user from getUser:', currentUser.email);
+          setUser(currentUser);
+          setLoading(false);
+          return;
+        }
+        
+        // No user found
+        console.log('useAuth: No user found');
+        
+        if (requireAuth && mounted) {
+          const redirect = `${redirectTo}?redirect=${encodeURIComponent(window.location.pathname)}`;
+          router.push(redirect);
+        }
+        
+        if (mounted) {
+          setLoading(false);
+        }
+        
+      } catch (err) {
+        console.error('useAuth: Error during auth check:', err);
+        if (mounted) {
+          setError('Failed to check authentication');
+          setLoading(false);
+        }
       }
     };
     
-    initialize();
+    // Run auth check
+    checkAuth();
+    
+    // Set a hard timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.log('useAuth: Hard timeout reached, forcing loading to false');
+        setLoading(false);
+        setError('Authentication check timed out');
+        
+        if (requireAuth) {
+          router.push(`${redirectTo}?redirect=${encodeURIComponent(window.location.pathname)}`);
+        }
+      }
+    }, 5000); // 5 second hard timeout
     
     // Setup auth state listener
     const supabase = createBrowserClient();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (mounted) {
-        if (event === 'SIGNED_OUT') {
-          setUser(null);
-          if (requireAuth) {
-            router.push(redirectTo);
-          }
-        } else if (session?.user) {
-          setUser(session.user);
+      console.log('useAuth: Auth state changed:', event);
+      
+      if (!mounted) return;
+      
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        if (requireAuth) {
+          router.push(redirectTo);
         }
+      } else if (session?.user) {
+        setUser(session.user);
+        setLoading(false);
       }
     });
     
+    // Cleanup
     return () => {
       mounted = false;
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
-  }, [checkAuth, requireAuth, redirectTo, router]);
+  }, [requireAuth, redirectTo, router]);
 
   const signOut = async () => {
     const supabase = createBrowserClient();
@@ -107,11 +120,35 @@ export function useAuth(options: UseAuthOptions = {}) {
     router.push('/');
   };
 
+  const refreshAuth = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const supabase = createBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        setUser(session.user);
+      } else {
+        setUser(null);
+        if (requireAuth) {
+          router.push(`${redirectTo}?redirect=${encodeURIComponent(window.location.pathname)}`);
+        }
+      }
+    } catch (err) {
+      console.error('useAuth: Error refreshing auth:', err);
+      setError('Failed to refresh authentication');
+    } finally {
+      setLoading(false);
+    }
+  }, [requireAuth, redirectTo, router]);
+
   return {
     user,
     loading,
     error,
     signOut,
-    refreshAuth: checkAuth
+    refreshAuth
   };
 }
