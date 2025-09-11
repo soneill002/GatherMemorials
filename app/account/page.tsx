@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import type { User } from '@supabase/supabase-js';
 
 interface Memorial {
   id: string;
@@ -22,46 +23,59 @@ interface Memorial {
 }
 
 export default function AccountDashboard() {
-  const { user, loading: authLoading, error: authError, signOut } = useAuth({
-    redirectTo: '/auth/signin',
-    requireAuth: true
-  });
-  
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
   const [memorials, setMemorials] = useState<Memorial[]>([]);
-  const [memorialsLoading, setMemorialsLoading] = useState(true);
-  const [memorialsError, setMemorialsError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user) {
-      loadMemorials();
-    }
-  }, [user]);
+    checkAuthAndLoadData();
+  }, []);
 
-  const loadMemorials = async () => {
-    if (!user) return;
-    
+  const checkAuthAndLoadData = async () => {
     try {
-      setMemorialsLoading(true);
-      setMemorialsError(null);
-      
+      console.log('Account: Starting auth check...');
       const supabase = createBrowserClient();
-      const { data, error } = await supabase
+      
+      // Get the session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error('Account: Session error:', sessionError);
+        setError('Failed to load session');
+        setIsLoading(false);
+        return;
+      }
+      
+      if (!session || !session.user) {
+        console.log('Account: No session found, redirecting to signin');
+        router.push('/auth/signin?redirect=/account');
+        return;
+      }
+      
+      console.log('Account: User authenticated:', session.user.email);
+      setUser(session.user);
+      
+      // Load memorials
+      const { data: memorialsData, error: memorialsError } = await supabase
         .from('memorials')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error('Error loading memorials:', error);
-        setMemorialsError('Failed to load memorials');
+      if (memorialsError) {
+        console.error('Account: Error loading memorials:', memorialsError);
+        setError('Failed to load memorials');
       } else {
-        setMemorials(data || []);
+        setMemorials(memorialsData || []);
       }
+      
+      setIsLoading(false);
     } catch (error) {
-      console.error('Unexpected error loading memorials:', error);
-      setMemorialsError('An unexpected error occurred');
-    } finally {
-      setMemorialsLoading(false);
+      console.error('Account: Unexpected error:', error);
+      setError('An unexpected error occurred');
+      setIsLoading(false);
     }
   };
 
@@ -90,6 +104,12 @@ export default function AccountDashboard() {
     }
   };
 
+  const handleSignOut = async () => {
+    const supabase = createBrowserClient();
+    await supabase.auth.signOut();
+    router.push('/');
+  };
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '';
     try {
@@ -103,22 +123,18 @@ export default function AccountDashboard() {
     }
   };
 
-  // Show loading state while checking auth
-  if (authLoading || (user && memorialsLoading)) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">
-            {authLoading ? 'Checking authentication...' : 'Loading your dashboard...'}
-          </p>
+          <p className="mt-4 text-gray-600">Loading your dashboard...</p>
         </div>
       </div>
     );
   }
 
-  // Show error state
-  if (authError || memorialsError) {
+  if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center max-w-md">
@@ -126,7 +142,7 @@ export default function AccountDashboard() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Dashboard</h2>
-          <p className="text-gray-600 mb-4">{authError || memorialsError}</p>
+          <p className="text-gray-600 mb-4">{error}</p>
           <div className="space-y-3">
             <button 
               onClick={() => window.location.reload()} 
@@ -146,14 +162,13 @@ export default function AccountDashboard() {
     );
   }
 
-  // Main dashboard content
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">My Memorials</h1>
+              <h1 className="text-3xl font-bold text-gray-900">My Dashboard</h1>
               <p className="mt-1 text-gray-600">
                 {user?.email ? `Signed in as ${user.email}` : 'Welcome to your dashboard'}
               </p>
@@ -169,7 +184,7 @@ export default function AccountDashboard() {
                 Create New Memorial
               </Link>
               <button
-                onClick={signOut}
+                onClick={handleSignOut}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
               >
                 Sign Out
