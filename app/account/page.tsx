@@ -28,19 +28,14 @@ export default function AccountDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const hasInitialized = useRef(false);
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Prevent multiple initializations
-    if (hasInitialized.current) {
-      return;
-    }
-    
     const initializeDashboard = async () => {
       try {
         console.log('Dashboard: Initializing...');
-        hasInitialized.current = true;
+        setIsLoading(true);
+        setError(null);
         
         // Create Supabase client
         const supabase = createBrowserClient();
@@ -67,71 +62,29 @@ export default function AccountDashboard() {
           
           console.log('Dashboard: No valid auth found, redirecting to signin');
           setError('Session expired. Please sign in again.');
-          setTimeout(() => {
-            router.push('/auth/signin?redirect=/account');
-          }, 2000);
+          router.push('/auth/signin?redirect=/account');
         }, 5000); // 5 second timeout
         
-        // Try multiple approaches to get the user
-        console.log('Dashboard: Attempting to get user...');
+        // Try to get user
+        console.log('Dashboard: Getting user...');
+        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
         
-        // First try: getUser with a Promise.race for timeout
-        const getUserPromise = supabase.auth.getUser();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('getUser timeout')), 4000)
-        );
+        // Clear the timeout since we got a response
+        if (initTimeoutRef.current) {
+          clearTimeout(initTimeoutRef.current);
+          initTimeoutRef.current = null;
+        }
         
-        try {
-          const result = await Promise.race([getUserPromise, timeoutPromise]);
-          const { data: { user: currentUser }, error: userError } = result as any;
-          
-          // Clear the timeout since we got a response
-          if (initTimeoutRef.current) {
-            clearTimeout(initTimeoutRef.current);
-            initTimeoutRef.current = null;
-          }
-          
-          if (userError) {
-            console.error('Dashboard: User error:', userError);
-            
-            // Try refreshing the session
-            console.log('Dashboard: Attempting session refresh...');
-            const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
-            
-            if (session && session.user) {
-              console.log('Dashboard: Session refreshed successfully');
-              setUser(session.user);
-              await loadMemorialsForUser(session.user.id);
-              return;
-            }
-            
-            // If refresh failed, clear auth and redirect
-            await supabase.auth.signOut();
-            router.push('/auth/signin?redirect=/account');
-            return;
-          }
-          
-          if (!currentUser) {
-            console.log('Dashboard: No user found, redirecting to sign in');
-            router.push('/auth/signin?redirect=/account');
-            return;
-          }
-          
-          console.log('Dashboard: User found:', currentUser.email);
+        if (currentUser) {
+          console.log('Dashboard: Got user:', currentUser.email);
           setUser(currentUser);
           await loadMemorialsForUser(currentUser.id);
-          
-        } catch (timeoutError) {
-          console.log('Dashboard: getUser timed out, trying getSession...');
+        } else {
+          console.log('Dashboard: User auth failed, error:', userError);
+          console.log('Dashboard: No user, trying getSession...');
           
           // Fallback: Try getSession instead
           const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-          
-          // Clear the timeout
-          if (initTimeoutRef.current) {
-            clearTimeout(initTimeoutRef.current);
-            initTimeoutRef.current = null;
-          }
           
           if (session && session.user) {
             console.log('Dashboard: Got user from session:', session.user.email);
@@ -180,69 +133,35 @@ export default function AccountDashboard() {
         console.log('Dashboard: Initialization complete');
       } catch (error) {
         console.error('Dashboard: Error in loadMemorialsForUser:', error);
-        setError('Failed to load memorials.');
+        setError('Failed to load memorials. Please try refreshing the page.');
         setIsLoading(false);
       }
     };
 
     // Initialize dashboard
     initializeDashboard();
-    
-    // Set up auth state listener (separate from initialization)
-    const supabase = createBrowserClient();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Dashboard: Auth state changed:', event);
-      
-      if (event === 'SIGNED_OUT') {
-        router.push('/auth/signin');
-      }
-    });
 
-    // Cleanup function
+    // Cleanup function to clear timeout on unmount
     return () => {
       if (initTimeoutRef.current) {
         clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
       }
-      subscription.unsubscribe();
     };
-  }, []); // Empty dependency array - only run once on mount
-
-  const handleSignOut = async () => {
-    try {
-      setIsLoading(true);
-      const supabase = createBrowserClient();
-      
-      // Sign out using Supabase
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error('Error signing out:', error);
-      }
-      
-      // Clear localStorage
-      localStorage.removeItem('sb-gathermemorials-auth-token');
-      
-      // Redirect to home page
-      router.push('/');
-    } catch (error) {
-      console.error('Error signing out:', error);
-      router.push('/');
-    }
-  };
+  }, []); // Empty dependency array - runs once on mount
 
   const handleDeleteMemorial = async (memorialId: string) => {
     if (!confirm('Are you sure you want to delete this memorial? This action cannot be undone.')) {
       return;
     }
-    
+
     try {
       const supabase = createBrowserClient();
-      
       const { error } = await supabase
         .from('memorials')
         .delete()
         .eq('id', memorialId);
-      
+
       if (error) {
         console.error('Error deleting memorial:', error);
         alert('Failed to delete memorial. Please try again.');
@@ -317,13 +236,13 @@ export default function AccountDashboard() {
             <div>
               <h1 className="text-3xl font-bold text-gray-900">My Memorials</h1>
               <p className="mt-1 text-gray-600">
-                {user?.email ? `Signed in as ${user.email}` : 'Manage your memorial pages'}
+                {user?.email ? `Signed in as ${user.email}` : 'Welcome to your dashboard'}
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              <Link 
+            <div className="flex gap-3">
+              <Link
                 href="/memorials/new"
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
               >
                 <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -331,8 +250,12 @@ export default function AccountDashboard() {
                 Create New Memorial
               </Link>
               <button
-                onClick={handleSignOut}
-                className="text-gray-600 hover:text-gray-900 transition-colors"
+                onClick={async () => {
+                  const supabase = createBrowserClient();
+                  await supabase.auth.signOut();
+                  router.push('/');
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
               >
                 Sign Out
               </button>
@@ -342,111 +265,138 @@ export default function AccountDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
-            <p className="text-sm text-gray-600">Total Memorials</p>
-            <p className="text-2xl font-semibold">{memorials.length}</p>
+            <div className="flex items-center">
+              <div className="flex-shrink-0 bg-blue-100 rounded-lg p-3">
+                <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <div className="ml-5">
+                <p className="text-gray-500 text-sm">Total Memorials</p>
+                <p className="text-2xl font-bold text-gray-900">{memorials.length}</p>
+              </div>
+            </div>
           </div>
+
           <div className="bg-white rounded-lg shadow p-6">
-            <p className="text-sm text-gray-600">Published</p>
-            <p className="text-2xl font-semibold">
-              {memorials.filter(m => m.status === 'published').length}
-            </p>
+            <div className="flex items-center">
+              <div className="flex-shrink-0 bg-green-100 rounded-lg p-3">
+                <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="ml-5">
+                <p className="text-gray-500 text-sm">Published</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {memorials.filter(m => m.status === 'published').length}
+                </p>
+              </div>
+            </div>
           </div>
+
           <div className="bg-white rounded-lg shadow p-6">
-            <p className="text-sm text-gray-600">Drafts</p>
-            <p className="text-2xl font-semibold">
-              {memorials.filter(m => m.status === 'draft').length}
-            </p>
+            <div className="flex items-center">
+              <div className="flex-shrink-0 bg-yellow-100 rounded-lg p-3">
+                <svg className="w-6 h-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="ml-5">
+                <p className="text-gray-500 text-sm">Drafts</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {memorials.filter(m => m.status === 'draft').length}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Memorials List */}
         <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold">Your Memorials</h2>
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-xl font-semibold text-gray-900">Your Memorials</h2>
           </div>
           
-          <div className="p-6">
-            {memorials.length > 0 ? (
-              <div className="space-y-4">
-                {memorials.map((memorial) => (
-                  <div key={memorial.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-medium text-gray-900">
-                          {memorial.first_name} {memorial.last_name}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {formatDate(memorial.date_of_birth)} - {formatDate(memorial.date_of_death)}
-                        </p>
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            memorial.status === 'published' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {memorial.status === 'published' ? 'Published' : 'Draft'}
-                          </span>
-                          {memorial.view_count > 0 && (
-                            <span className="text-xs text-gray-500">
-                              {memorial.view_count} views
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {memorial.status === 'published' && (
-                          <Link
-                            href={`/memorials/${memorial.id}`}
-                            className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700 transition-colors"
-                          >
-                            View
-                          </Link>
-                        )}
-                        <Link
-                          href={`/memorials/new?id=${memorial.id}`}
-                          className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700 transition-colors"
-                        >
-                          Edit
-                        </Link>
-                        <button
-                          onClick={() => {
-                            const url = `${window.location.origin}/memorials/${memorial.id}`;
-                            navigator.clipboard.writeText(url);
-                            alert('Memorial link copied to clipboard!');
-                          }}
-                          className="px-3 py-1 text-sm text-gray-600 hover:text-gray-700 transition-colors"
-                        >
-                          Share
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMemorial(memorial.id)}
-                          className="px-3 py-1 text-sm text-red-600 hover:text-red-700 transition-colors"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                <p className="text-gray-500 mb-4">You haven't created any memorials yet</p>
-                <Link 
+          {memorials.length === 0 ? (
+            <div className="p-12 text-center">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">You haven't created any memorials yet</h3>
+              <p className="mt-1 text-sm text-gray-500">Get started by creating your first memorial.</p>
+              <div className="mt-6">
+                <Link
                   href="/memorials/new"
-                  className="inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                 >
+                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
                   Create Your First Memorial
                 </Link>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {memorials.map((memorial) => (
+                <div key={memorial.id} className="p-6 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center">
+                        <h3 className="text-lg font-medium text-gray-900">
+                          {memorial.first_name} {memorial.last_name}
+                        </h3>
+                        {memorial.status === 'published' ? (
+                          <span className="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                            Published
+                          </span>
+                        ) : (
+                          <span className="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                            Draft
+                          </span>
+                        )}
+                      </div>
+                      {memorial.headline && (
+                        <p className="mt-1 text-sm text-gray-600">{memorial.headline}</p>
+                      )}
+                      <div className="mt-2 text-sm text-gray-500">
+                        {memorial.date_of_birth && memorial.date_of_death && (
+                          <span>
+                            {formatDate(memorial.date_of_birth)} - {formatDate(memorial.date_of_death)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {memorial.status === 'published' && (
+                        <Link
+                          href={`/memorials/${memorial.id}`}
+                          className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700"
+                        >
+                          View
+                        </Link>
+                      )}
+                      <Link
+                        href={`/memorials/new?id=${memorial.id}`}
+                        className="px-3 py-1 text-sm text-gray-600 hover:text-gray-700"
+                      >
+                        Edit
+                      </Link>
+                      <button
+                        onClick={() => handleDeleteMemorial(memorial.id)}
+                        className="px-3 py-1 text-sm text-red-600 hover:text-red-700"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
