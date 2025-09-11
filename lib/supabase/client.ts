@@ -1,5 +1,6 @@
 import { createBrowserClient as createSupabaseBrowserClient } from '@supabase/ssr';
 import type { Database } from '@/types/database';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 // Environment variables validation
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -9,11 +10,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+// Singleton instance - THIS IS THE KEY FIX
+let browserClient: SupabaseClient<Database> | undefined;
+
 /**
  * Helper to clear corrupted auth data
  */
 export function clearAuthData() {
   if (typeof window === 'undefined') return;
+  
+  // Clear the singleton instance
+  browserClient = undefined;
   
   // Clear all potential auth-related keys
   const keysToRemove = [
@@ -46,13 +53,17 @@ export function clearAuthData() {
 }
 
 /**
- * Create a new Supabase browser client instance
- * Always creates a fresh instance to avoid state corruption issues
+ * Create or return existing Supabase browser client instance
+ * SINGLETON PATTERN - Returns the same instance to all components
  */
 export function createBrowserClient() {
-  // Always create a fresh instance - no singleton
-  // The Supabase SDK handles connection pooling internally
-  return createSupabaseBrowserClient<Database>(
+  // Return existing instance if available
+  if (browserClient) {
+    return browserClient;
+  }
+
+  // Create new instance only if one doesn't exist
+  browserClient = createSupabaseBrowserClient<Database>(
     supabaseUrl,
     supabaseAnonKey,
     {
@@ -62,53 +73,7 @@ export function createBrowserClient() {
         detectSessionInUrl: true,
         flowType: 'pkce',
         storageKey: 'sb-gathermemorials-auth-token',
-        storage: {
-          getItem: (key: string) => {
-            if (typeof window === 'undefined') return null;
-            try {
-              const item = window.localStorage.getItem(key);
-              // Handle corrupted data
-              if (item) {
-                // Check if it's malformed (starts with base64- prefix)
-                if (item.startsWith('base64-')) {
-                  console.warn('Corrupted auth data detected, clearing...');
-                  window.localStorage.removeItem(key);
-                  return null;
-                }
-                // Try to parse to verify it's valid JSON
-                try {
-                  JSON.parse(item);
-                  return item;
-                } catch {
-                  console.warn('Invalid JSON in auth storage, clearing...');
-                  window.localStorage.removeItem(key);
-                  return null;
-                }
-              }
-              return item;
-            } catch (error) {
-              console.error('Error reading from localStorage:', error);
-              window.localStorage.removeItem(key);
-              return null;
-            }
-          },
-          setItem: (key: string, value: string) => {
-            if (typeof window === 'undefined') return;
-            try {
-              window.localStorage.setItem(key, value);
-            } catch (error) {
-              console.error('Error writing to localStorage:', error);
-            }
-          },
-          removeItem: (key: string) => {
-            if (typeof window === 'undefined') return;
-            try {
-              window.localStorage.removeItem(key);
-            } catch (error) {
-              console.error('Error removing from localStorage:', error);
-            }
-          },
-        },
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
       },
       global: {
         headers: {
@@ -120,17 +85,33 @@ export function createBrowserClient() {
       }
     }
   );
+
+  return browserClient;
 }
 
 /**
- * Get current user with better error handling - no hanging
+ * Force create a new client (use sparingly, only when necessary)
+ */
+export function createFreshBrowserClient() {
+  browserClient = undefined;
+  return createBrowserClient();
+}
+
+/**
+ * Get current user with better error handling
  */
 export async function getCurrentUser() {
   try {
     const supabase = createBrowserClient();
     
-    // Skip getSession and go straight to getUser
-    // This avoids the hanging issue with getSession
+    // First try to get the session (faster)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (session?.user) {
+      return { user: session.user, error: null };
+    }
+    
+    // If no session, try getUser (makes a network request)
     const { data: { user }, error } = await supabase.auth.getUser();
     
     if (error) {
@@ -200,6 +181,8 @@ export const auth = {
     try {
       const supabase = createBrowserClient();
       const { error } = await supabase.auth.signOut();
+      // Clear the singleton after sign out
+      browserClient = undefined;
       return { error };
     } catch (error) {
       console.error('SignOut error:', error);
@@ -289,6 +272,16 @@ export const db = {
         .select()
         .single();
       return { data, error };
+    },
+
+    async upsert(userId: string, data: Record<string, any>) {
+      const supabase = createBrowserClient();
+      const { data: result, error } = await supabase
+        .from('profiles')
+        .upsert({ id: userId, ...data }, { onConflict: 'id' })
+        .select()
+        .single();
+      return { data: result, error };
     },
   },
 
@@ -608,8 +601,7 @@ export const realtime = {
   },
 };
 
-// For backwards compatibility - create a default instance
-// But note that each function now creates its own client
+// For backwards compatibility - use the singleton
 export const supabase = createBrowserClient();
 
 export default supabase;
