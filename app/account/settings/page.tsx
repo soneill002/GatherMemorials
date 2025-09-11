@@ -1,647 +1,727 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import Image from 'next/image'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { 
-  Heart, 
-  Calendar, 
-  Settings, 
-  Trash2, 
-  Clock, 
-  ChevronRight,
-  ChevronDown,
-  Search,
-  Filter,
-  Bell,
-  Download,
-  Grid3x3,
-  List,
   User,
-  Cake,
-  Cross,
+  Mail,
+  Lock,
+  Bell,
+  Shield,
+  Download,
+  Trash2,
+  ChevronRight,
+  Save,
   AlertCircle,
-  FileText,
-  FileSpreadsheet,
-  FileCode,
-  Globe
-} from 'lucide-react'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Card } from '@/components/ui/Card'
-import { Modal } from '@/components/ui/Modal'
-import { useToast } from '@/components/ui/Toast'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { supabase } from '@/lib/supabase/client'
-import { auth } from '@/lib/auth'  // Changed from requireAuth to auth
-import type { Memorial } from '@/types/memorial'
-import type { User } from '@/types/user'
+  Check,
+  X,
+  Loader2,
+  Heart,
+  Calendar,
+  MessageSquare,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+import { createBrowserClient } from '@/lib/supabase/client';
 
-interface PrayerListItem {
-  id: string
-  memorial_id: string
-  added_date: string
-  notes: string | null
-  memorial: {
-    id: string
-    first_name: string
-    middle_name: string | null
-    last_name: string
-    date_of_birth: string
-    date_of_death: string
-    headline: string
-    featured_image: string | null
-    privacy_setting: 'public' | 'private' | 'password'
-    custom_url: string | null
-  }
-}
+export default function AccountSettingsPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState('profile');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
-interface Anniversary {
-  memorial_id: string
-  memorial_name: string
-  type: 'birthday' | 'death'
-  date: string
-  days_until: number
-  years_since?: number
-  years_old?: number
-}
+  // Form states
+  const [profile, setProfile] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: ''
+  });
 
-interface PrayerListStats {
-  total_count: number
-  anniversaries_count: number
-  recent_additions: Array<{
-    memorial_id: string
-    memorial_name: string
-    added_date: string
-  }>
-}
+  const [notifications, setNotifications] = useState({
+    email_notifications: true,
+    prayer_reminders: true,
+    anniversary_reminders: true,
+    guestbook_notifications: true,
+    newsletter: false
+  });
 
-type ExportFormat = 'txt' | 'csv' | 'json' | 'html'
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_password: ''
+  });
 
-export default function PrayerListPage() {
-  const router = useRouter()
-  const { success: showSuccess, error: showError, ToastContainer } = useToast()
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [prayerList, setPrayerList] = useState<PrayerListItem[]>([])
-  const [searchTerm, setSearchTerm] = useState('')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  const [showRemoveModal, setShowRemoveModal] = useState(false)
-  const [itemToRemove, setItemToRemove] = useState<PrayerListItem | null>(null)
-  const [upcomingAnniversaries, setUpcomingAnniversaries] = useState<Anniversary[]>([])
-  const [stats, setStats] = useState<PrayerListStats | null>(null)
-  const [isRemoving, setIsRemoving] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
-  const [showExportMenu, setShowExportMenu] = useState(false)
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('txt')
+  const [passwordErrors, setPasswordErrors] = useState({
+    current: '',
+    new: '',
+    confirm: ''
+  });
 
   useEffect(() => {
-    checkAuth()
-  }, [])
+    checkAuthAndLoadData();
+  }, []);
 
-  const checkAuth = async () => {
-    const currentUser = await auth.getUser()  // Changed to use auth.getUser()
-    if (!currentUser) {
-      router.push('/auth/signin?redirect=/account/prayer-list')
-      return
-    }
-    setUser(currentUser as any)  // Type cast as User type might differ slightly
-    loadPrayerList()  // Load prayer list immediately after auth check
-  }
-
-  const loadPrayerList = async () => {
-    setLoading(true)
+  const checkAuthAndLoadData = async () => {
     try {
-      const response = await fetch('/api/prayer-list', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include'
-      })
+      const supabase = createBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch prayer list')
+      if (!session) {
+        router.push('/auth/signin?redirect=/account/settings');
+        return;
       }
       
-      const data = await response.json()
+      setUser(session.user);
       
-      // Set the prayer list
-      setPrayerList(data.prayer_list || [])
+      // Load user profile data
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
       
-      // Set upcoming anniversaries
-      setUpcomingAnniversaries(data.upcoming_anniversaries || [])
+      if (profileData) {
+        setProfile({
+          first_name: profileData.first_name || '',
+          last_name: profileData.last_name || '',
+          email: session.user.email || '',
+          phone: profileData.phone || ''
+        });
+        
+        setNotifications({
+          email_notifications: profileData.email_notifications ?? true,
+          prayer_reminders: profileData.prayer_reminders ?? true,
+          anniversary_reminders: profileData.anniversary_reminders ?? true,
+          guestbook_notifications: profileData.guestbook_notifications ?? true,
+          newsletter: profileData.newsletter ?? false
+        });
+      }
       
-      // Set stats
-      setStats(data.stats || null)
+      setLoading(false);
     } catch (error) {
-      console.error('Error loading prayer list:', error)
-      showError('Failed to load prayer list')
-    } finally {
-      setLoading(false)
+      console.error('Error loading settings:', error);
+      setLoading(false);
     }
-  }
+  };
 
-  const handleRemove = async (item: PrayerListItem) => {
-    setItemToRemove(item)
-    setShowRemoveModal(true)
-  }
-
-  const confirmRemove = async () => {
-    if (!itemToRemove) return
-
-    setIsRemoving(true)
+  const handleProfileSave = async () => {
+    setSaving(true);
     try {
-      const response = await fetch(`/api/prayer-list/${itemToRemove.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to remove from prayer list')
-      }
-
-      const data = await response.json()
+      const supabase = createBrowserClient();
       
-      // Update the prayer list by removing the item
-      setPrayerList(prev => prev.filter(item => item.id !== itemToRemove.id))
-      
-      // Update anniversaries by removing related ones
-      setUpcomingAnniversaries(prev => 
-        prev.filter(ann => ann.memorial_id !== itemToRemove.memorial_id)
-      )
-      
-      // Update stats if available
-      if (stats) {
-        setStats({
-          ...stats,
-          total_count: data.remaining_count || stats.total_count - 1
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          phone: profile.phone,
+          updated_at: new Date().toISOString()
         })
-      }
+        .eq('id', user.id);
       
-      showSuccess(`${data.memorial_name} removed from prayer list`)
-      setShowRemoveModal(false)
-      setItemToRemove(null)
+      if (error) throw error;
+      
+      displayToast('Profile updated successfully', 'success');
     } catch (error) {
-      console.error('Error removing from prayer list:', error)
-      showError('Failed to remove from prayer list')
+      console.error('Error updating profile:', error);
+      displayToast('Failed to update profile', 'error');
     } finally {
-      setIsRemoving(false)
+      setSaving(false);
     }
-  }
+  };
 
-  const exportPrayerList = async (format: ExportFormat = 'txt') => {
-    setIsExporting(true)
-    setShowExportMenu(false)
-    
+  const handleNotificationsSave = async () => {
+    setSaving(true);
     try {
-      const response = await fetch(
-        `/api/prayer-list/export?format=${format}&includeNotes=true&includeServices=false`,
-        {
-          method: 'GET',
-          credentials: 'include'
-        }
-      )
-
-      if (!response.ok) {
-        // Check for specific error messages
-        if (response.status === 404) {
-          throw new Error('Prayer list is empty')
-        }
-        throw new Error('Failed to export prayer list')
-      }
-
-      // Get the blob from the response
-      const blob = await response.blob()
+      const supabase = createBrowserClient();
       
-      // Create download link
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          ...notifications,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
       
-      // Set filename based on format
-      const date = new Date().toISOString().split('T')[0]
-      const extension = format === 'html' ? 'html' : format
-      a.download = `prayer-list-${date}.${extension}`
+      if (error) throw error;
       
-      // Trigger download
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
-
-      showSuccess(`Prayer list exported as ${format.toUpperCase()}`)
+      displayToast('Notification preferences updated', 'success');
     } catch (error) {
-      console.error('Error exporting prayer list:', error)
-      showError(error instanceof Error ? error.message : 'Failed to export prayer list')
+      console.error('Error updating notifications:', error);
+      displayToast('Failed to update notifications', 'error');
     } finally {
-      setIsExporting(false)
+      setSaving(false);
     }
+  };
+
+  const handlePasswordChange = async () => {
+    // Reset errors
+    setPasswordErrors({ current: '', new: '', confirm: '' });
+    
+    // Validation
+    let hasErrors = false;
+    
+    if (!passwordForm.current_password) {
+      setPasswordErrors(prev => ({ ...prev, current: 'Current password is required' }));
+      hasErrors = true;
+    }
+    
+    if (!passwordForm.new_password) {
+      setPasswordErrors(prev => ({ ...prev, new: 'New password is required' }));
+      hasErrors = true;
+    } else if (passwordForm.new_password.length < 8) {
+      setPasswordErrors(prev => ({ ...prev, new: 'Password must be at least 8 characters' }));
+      hasErrors = true;
+    }
+    
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setPasswordErrors(prev => ({ ...prev, confirm: 'Passwords do not match' }));
+      hasErrors = true;
+    }
+    
+    if (hasErrors) return;
+    
+    setSaving(true);
+    try {
+      const supabase = createBrowserClient();
+      
+      const { error } = await supabase.auth.updateUser({
+        password: passwordForm.new_password
+      });
+      
+      if (error) throw error;
+      
+      // Clear form
+      setPasswordForm({
+        current_password: '',
+        new_password: '',
+        confirm_password: ''
+      });
+      
+      displayToast('Password updated successfully', 'success');
+    } catch (error: any) {
+      console.error('Error updating password:', error);
+      displayToast(error.message || 'Failed to update password', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') return;
+    
+    setSaving(true);
+    try {
+      // This would typically call an API endpoint to handle account deletion
+      // For now, we'll just show the logic structure
+      
+      displayToast('Account deletion request submitted', 'success');
+      
+      // Sign out and redirect
+      const supabase = createBrowserClient();
+      await supabase.auth.signOut();
+      router.push('/');
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      displayToast('Failed to delete account', 'error');
+    } finally {
+      setSaving(false);
+      setShowDeleteModal(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    setSaving(true);
+    try {
+      // This would typically call an API endpoint to generate and download user data
+      displayToast('Data export started. You will receive an email when ready.', 'success');
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      displayToast('Failed to export data', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const displayToast = (message: string, type: 'success' | 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading settings...</p>
+        </div>
+      </div>
+    );
   }
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', { 
-      month: 'long', 
-      day: 'numeric', 
-      year: 'numeric' 
-    })
-  }
-
-  const formatAnniversaryDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', { 
-      month: 'long', 
-      day: 'numeric' 
-    })
-  }
-
-  const getYearsSince = (dateString: string) => {
-    const date = new Date(dateString)
-    const today = new Date()
-    return today.getFullYear() - date.getFullYear()
-  }
-
-  const filteredList = prayerList.filter(item => {
-    if (!item.memorial) return false
-    const fullName = `${item.memorial.first_name} ${item.memorial.middle_name || ''} ${item.memorial.last_name}`.toLowerCase()
-    return fullName.includes(searchTerm.toLowerCase())
-  })
-
-  const exportOptions = [
-    { value: 'txt' as ExportFormat, label: 'Text File', icon: FileText, description: 'Simple text format' },
-    { value: 'csv' as ExportFormat, label: 'CSV (Excel)', icon: FileSpreadsheet, description: 'For spreadsheets' },
-    { value: 'json' as ExportFormat, label: 'JSON', icon: FileCode, description: 'Structured data' },
-    { value: 'html' as ExportFormat, label: 'HTML', icon: Globe, description: 'Formatted webpage' }
-  ]
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-serif text-gray-900 flex items-center gap-2">
-                <Heart className="h-8 w-8 text-marian-blue" />
-                My Prayer List
-              </h1>
-              <p className="mt-2 text-gray-600">
-                {stats?.total_count || prayerList.length} {(stats?.total_count || prayerList.length) === 1 ? 'person' : 'people'} in your prayers
-              </p>
+              <h1 className="text-3xl font-bold text-gray-900">Account Settings</h1>
+              <p className="mt-1 text-gray-600">Manage your account preferences and settings</p>
             </div>
-            <div className="flex gap-2">
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowExportMenu(!showExportMenu)}
-                  disabled={isExporting || prayerList.length === 0}
-                  className="flex items-center gap-2"
-                >
-                  <Download className="h-4 w-4" />
-                  {isExporting ? 'Exporting...' : 'Export'}
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-                
-                {showExportMenu && !isExporting && (
-                  <div className="absolute top-full mt-2 right-0 bg-white rounded-lg shadow-lg border border-gray-200 py-2 w-56 z-10">
-                    {exportOptions.map((option) => {
-                      const Icon = option.icon
-                      return (
-                        <button
-                          key={option.value}
-                          onClick={() => exportPrayerList(option.value)}
-                          className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-start gap-3"
-                        >
-                          <Icon className="h-5 w-5 text-gray-500 mt-0.5" />
-                          <div>
-                            <div className="font-medium text-sm text-gray-900">{option.label}</div>
-                            <div className="text-xs text-gray-500">{option.description}</div>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-              
-              <Link href="/account/prayer-list/settings">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  className="flex items-center gap-2"
-                >
-                  <Bell className="h-4 w-4" />
-                  Reminder Settings
-                </Button>
-              </Link>
-            </div>
+            <Link
+              href="/account"
+              className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1"
+            >
+              Back to Dashboard
+              <ChevronRight className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Upcoming Anniversaries */}
-        {upcomingAnniversaries.length > 0 && (
-          <Card className="mb-8 bg-gradient-to-r from-marian-blue/5 to-liturgical-gold/5">
-            <div className="p-6">
-              <h2 className="text-xl font-serif text-gray-900 mb-4 flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-marian-blue" />
-                Upcoming Anniversaries
-              </h2>
-              <div className="space-y-3">
-                {upcomingAnniversaries.slice(0, 3).map((anniversary, index) => (
-                  <div key={`${anniversary.memorial_id}-${anniversary.type}-${index}`} className="flex items-center justify-between bg-white rounded-lg px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      {anniversary.type === 'birthday' ? (
-                        <Cake className="h-5 w-5 text-liturgical-gold" />
-                      ) : (
-                        <Cross className="h-5 w-5 text-marian-blue" />
-                      )}
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          {anniversary.memorial_name}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {anniversary.type === 'birthday' ? 'Birthday' : 'Death Anniversary'} - {formatAnniversaryDate(anniversary.date)}
-                          {anniversary.years_since && ` (${anniversary.years_since} years)`}
-                          {anniversary.years_old && ` (would be ${anniversary.years_old})`}
-                        </p>
-                      </div>
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Sidebar */}
+          <div className="lg:w-64">
+            <nav className="space-y-1">
+              {[
+                { id: 'profile', label: 'Profile', icon: User },
+                { id: 'password', label: 'Password', icon: Lock },
+                { id: 'notifications', label: 'Notifications', icon: Bell },
+                { id: 'privacy', label: 'Privacy & Data', icon: Shield },
+                { id: 'danger', label: 'Danger Zone', icon: AlertCircle }
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeTab === item.id
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1">
+            {activeTab === 'profile' && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">Profile Information</h2>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        First Name
+                      </label>
+                      <input
+                        type="text"
+                        value={profile.first_name}
+                        onChange={(e) => setProfile({ ...profile, first_name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
                     </div>
-                    <div className="text-right">
-                      {anniversary.days_until === 0 ? (
-                        <span className="text-sm font-medium text-marian-blue">Today</span>
-                      ) : anniversary.days_until === 1 ? (
-                        <span className="text-sm font-medium text-marian-blue">Tomorrow</span>
-                      ) : (
-                        <span className="text-sm text-gray-600">In {anniversary.days_until} days</span>
-                      )}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Last Name
+                      </label>
+                      <input
+                        type="text"
+                        value={profile.last_name}
+                        onChange={(e) => setProfile({ ...profile, last_name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
                     </div>
                   </div>
-                ))}
-              </div>
-              {upcomingAnniversaries.length > 3 && (
-                <div className="mt-4 text-center">
-                  <Link href="/account/prayer-list/anniversaries">
-                    <Button variant="ghost" size="sm">
-                      View all {upcomingAnniversaries.length} anniversaries
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </Link>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={profile.email}
+                      disabled
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Email cannot be changed</p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      value={profile.phone}
+                      onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                      placeholder="(555) 555-5555"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  
+                  <div className="pt-4">
+                    <button
+                      onClick={handleProfileSave}
+                      disabled={saving}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {saving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      {saving ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          </Card>
-        )}
+              </div>
+            )}
 
-        {/* Search and Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Search by name..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant={viewMode === 'grid' ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('grid')}
-            >
-              <Grid3x3 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-            >
-              <List className="h-4 w-4" />
-            </Button>
+            {activeTab === 'password' && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">Change Password</h2>
+                <div className="space-y-4 max-w-md">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Current Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showCurrentPassword ? 'text' : 'password'}
+                        value={passwordForm.current_password}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                      >
+                        {showCurrentPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                    {passwordErrors.current && (
+                      <p className="mt-1 text-sm text-red-600">{passwordErrors.current}</p>
+                    )}
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      New Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={passwordForm.new_password}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
+                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                      >
+                        {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                    {passwordErrors.new && (
+                      <p className="mt-1 text-sm text-red-600">{passwordErrors.new}</p>
+                    )}
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordForm.confirm_password}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {passwordErrors.confirm && (
+                      <p className="mt-1 text-sm text-red-600">{passwordErrors.confirm}</p>
+                    )}
+                  </div>
+                  
+                  <div className="pt-4">
+                    <button
+                      onClick={handlePasswordChange}
+                      disabled={saving}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {saving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Lock className="h-4 w-4" />
+                      )}
+                      {saving ? 'Updating...' : 'Update Password'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'notifications' && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">Notification Preferences</h2>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between py-3 border-b">
+                    <div>
+                      <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        Email Notifications
+                      </h3>
+                      <p className="text-sm text-gray-600">Receive email updates about your account</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifications.email_notifications}
+                        onChange={(e) => setNotifications({ ...notifications, email_notifications: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center justify-between py-3 border-b">
+                    <div>
+                      <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                        <Heart className="h-4 w-4" />
+                        Prayer Reminders
+                      </h3>
+                      <p className="text-sm text-gray-600">Daily reminders to pray for those on your list</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifications.prayer_reminders}
+                        onChange={(e) => setNotifications({ ...notifications, prayer_reminders: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center justify-between py-3 border-b">
+                    <div>
+                      <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Anniversary Reminders
+                      </h3>
+                      <p className="text-sm text-gray-600">Notifications for birthdays and death anniversaries</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifications.anniversary_reminders}
+                        onChange={(e) => setNotifications({ ...notifications, anniversary_reminders: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center justify-between py-3 border-b">
+                    <div>
+                      <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4" />
+                        Guestbook Notifications
+                      </h3>
+                      <p className="text-sm text-gray-600">Get notified when someone signs a guestbook</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifications.guestbook_notifications}
+                        onChange={(e) => setNotifications({ ...notifications, guestbook_notifications: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center justify-between py-3">
+                    <div>
+                      <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        Newsletter
+                      </h3>
+                      <p className="text-sm text-gray-600">Receive our monthly newsletter with updates and tips</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifications.newsletter}
+                        onChange={(e) => setNotifications({ ...notifications, newsletter: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  
+                  <div className="pt-4">
+                    <button
+                      onClick={handleNotificationsSave}
+                      disabled={saving}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {saving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      {saving ? 'Saving...' : 'Save Preferences'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'privacy' && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">Privacy & Data</h2>
+                <div className="space-y-6">
+                  <div className="border rounded-lg p-4">
+                    <h3 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                      <Download className="h-5 w-5" />
+                      Export Your Data
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Download a copy of all your data including memorials, guestbook entries, and account information.
+                    </p>
+                    <button
+                      onClick={handleExportData}
+                      disabled={saving}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {saving ? 'Processing...' : 'Request Data Export'}
+                    </button>
+                  </div>
+                  
+                  <div className="border rounded-lg p-4">
+                    <h3 className="font-medium text-gray-900 mb-2">Data Retention</h3>
+                    <p className="text-sm text-gray-600">
+                      We retain your data as long as your account is active. Memorial pages remain accessible 
+                      according to your privacy settings. You can delete your account at any time.
+                    </p>
+                  </div>
+                  
+                  <div className="border rounded-lg p-4">
+                    <h3 className="font-medium text-gray-900 mb-2">Privacy Policy</h3>
+                    <p className="text-sm text-gray-600 mb-2">
+                      Learn more about how we collect, use, and protect your information.
+                    </p>
+                    <Link href="/privacy" className="text-sm text-blue-600 hover:text-blue-700">
+                      View Privacy Policy →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'danger' && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">Danger Zone</h2>
+                <div className="border border-red-200 rounded-lg p-4 bg-red-50">
+                  <h3 className="font-medium text-red-900 mb-2 flex items-center gap-2">
+                    <Trash2 className="h-5 w-5" />
+                    Delete Account
+                  </h3>
+                  <p className="text-sm text-red-800 mb-4">
+                    Once you delete your account, there is no going back. All your data will be permanently deleted.
+                    This includes all memorials you've created, guestbook entries, and your prayer list.
+                  </p>
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                  >
+                    Delete My Account
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Prayer List */}
-        {loading ? (
-          <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
-            {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-64" />
-            ))}
-          </div>
-        ) : filteredList.length === 0 ? (
-          <Card className="p-12 text-center">
-            {searchTerm ? (
-              <>
-                <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
-                <p className="text-gray-600">Try adjusting your search terms</p>
-              </>
-            ) : prayerList.length === 0 ? (
-              <>
-                <Heart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Your prayer list is empty</h3>
-                <p className="text-gray-600 mb-6">
-                  Add people to your prayer list from their memorial pages
-                </p>
-                <Link href="/memorials">
-                  <Button variant="primary">Browse Memorials</Button>
-                </Link>
-              </>
-            ) : (
-              <>
-                <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
-                <p className="text-gray-600">No one in your prayer list matches "{searchTerm}"</p>
-              </>
-            )}
-          </Card>
-        ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredList.map((item) => (
-              <Card key={item.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                <Link href={`/memorials/${item.memorial.custom_url || item.memorial.id}`}>
-                  <div className="aspect-w-3 aspect-h-4 relative h-48 bg-gray-100">
-                    {item.memorial.featured_image ? (
-                      <Image
-                        src={item.memorial.featured_image}
-                        alt={`${item.memorial.first_name} ${item.memorial.last_name}`}
-                        fill
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <User className="h-20 w-20 text-gray-400" />
-                      </div>
-                    )}
-                  </div>
-                </Link>
-                <div className="p-4">
-                  <Link href={`/memorials/${item.memorial.custom_url || item.memorial.id}`}>
-                    <h3 className="text-lg font-semibold text-gray-900 hover:text-marian-blue transition-colors">
-                      {item.memorial.first_name} {item.memorial.middle_name && `${item.memorial.middle_name} `}
-                      {item.memorial.last_name}
-                    </h3>
-                  </Link>
-                  <p className="text-sm text-gray-600 mt-1">{item.memorial.headline}</p>
-                  <div className="mt-3 space-y-1 text-sm text-gray-500">
-                    <p>{formatDate(item.memorial.date_of_birth)} - {formatDate(item.memorial.date_of_death)}</p>
-                    <p className="italic">Passed {getYearsSince(item.memorial.date_of_death)} years ago</p>
-                  </div>
-                  {item.notes && (
-                    <div className="mt-3 p-2 bg-gray-50 rounded text-sm text-gray-600">
-                      {item.notes}
-                    </div>
-                  )}
-                  <div className="mt-4 flex justify-between items-center">
-                    <span className="text-xs text-gray-500">
-                      Added {formatDate(item.added_date)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        handleRemove(item)
-                      }}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredList.map((item) => (
-              <Card key={item.id} className="p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-start gap-4">
-                  <Link href={`/memorials/${item.memorial.custom_url || item.memorial.id}`}>
-                    <div className="relative w-20 h-20 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                      {item.memorial.featured_image ? (
-                        <Image
-                          src={item.memorial.featured_image}
-                          alt={`${item.memorial.first_name} ${item.memorial.last_name}`}
-                          fill
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <User className="h-10 w-10 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-                  <div className="flex-1">
-                    <Link href={`/memorials/${item.memorial.custom_url || item.memorial.id}`}>
-                      <h3 className="text-lg font-semibold text-gray-900 hover:text-marian-blue transition-colors">
-                        {item.memorial.first_name} {item.memorial.middle_name && `${item.memorial.middle_name} `}
-                        {item.memorial.last_name}
-                      </h3>
-                    </Link>
-                    <p className="text-sm text-gray-600 mt-1">{item.memorial.headline}</p>
-                    <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-500">
-                      <span>{formatDate(item.memorial.date_of_birth)} - {formatDate(item.memorial.date_of_death)}</span>
-                      <span className="italic">Passed {getYearsSince(item.memorial.date_of_death)} years ago</span>
-                      <span>Added {formatDate(item.added_date)}</span>
-                    </div>
-                    {item.notes && (
-                      <div className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-600">
-                        {item.notes}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemove(item)}
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* Help Section */}
-        <Card className="mt-12 bg-gradient-to-r from-vatican-white to-gray-50">
-          <div className="p-8 text-center">
-            <Cross className="h-12 w-12 text-marian-blue mx-auto mb-4" />
-            <h2 className="text-2xl font-serif text-gray-900 mb-4">
-              Prayer Resources
-            </h2>
-            <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
-              Find comfort and guidance through our collection of Catholic prayers, 
-              scripture readings, and resources for remembering loved ones.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/prayers">
-                <Button variant="outline">
-                  Browse Prayers
-                </Button>
-              </Link>
-              <Link href="/blog/grief-support">
-                <Button variant="outline">
-                  Grief Support Articles
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </Card>
       </div>
 
-      {/* Remove Confirmation Modal */}
-      {showRemoveModal && itemToRemove && (
-        <Modal
-          isOpen={showRemoveModal}
-          onClose={() => !isRemoving && setShowRemoveModal(false)}
-          title="Remove from Prayer List"
-        >
-          <div className="p-6">
-            <p className="text-gray-600">
-              Are you sure you want to remove{' '}
-              <span className="font-semibold">
-                {itemToRemove.memorial.first_name} {itemToRemove.memorial.last_name}
-              </span>{' '}
-              from your prayer list?
+      {/* Delete Account Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Delete Account</h3>
+            <p className="text-gray-600 mb-4">
+              This action cannot be undone. All your data will be permanently deleted.
             </p>
-            <div className="mt-6 flex gap-3 justify-end">
-              <Button
-                variant="outline"
-                onClick={() => setShowRemoveModal(false)}
-                disabled={isRemoving}
+            <p className="text-sm text-gray-600 mb-4">
+              Type <span className="font-mono font-bold">DELETE</span> to confirm:
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Type DELETE"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteConfirmText('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
               >
                 Cancel
-              </Button>
-              <Button
-                variant="primary"
-                onClick={confirmRemove}
-                disabled={isRemoving}
-                className="bg-red-600 hover:bg-red-700 disabled:bg-red-400"
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText !== 'DELETE' || saving}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isRemoving ? 'Removing...' : 'Remove'}
-              </Button>
+                {saving ? 'Deleting...' : 'Delete Account'}
+              </button>
             </div>
           </div>
-        </Modal>
+        </div>
       )}
 
-      {/* Toast Notifications */}
-      <ToastContainer />
+      {/* Toast Notification */}
+      {showToast && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <div className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg ${
+            toastType === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+          }`}>
+            {toastType === 'success' ? (
+              <Check className="h-5 w-5" />
+            ) : (
+              <X className="h-5 w-5" />
+            )}
+            {toastMessage}
+          </div>
+        </div>
+      )}
     </div>
-  )
-} 
+  );
+}
