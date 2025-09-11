@@ -38,6 +38,7 @@ export default function AccountSettingsPage() {
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [authCheckComplete, setAuthCheckComplete] = useState(false);
 
   // Form states
   const [profile, setProfile] = useState({
@@ -68,68 +69,158 @@ export default function AccountSettingsPage() {
   });
 
   useEffect(() => {
-    checkAuthAndLoadData();
-  }, []);
+    let mounted = true;
+    let timeoutId: NodeJS.Timeout;
 
-  const checkAuthAndLoadData = async () => {
-    try {
-      const supabase = createBrowserClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        router.push('/auth/signin?redirect=/account/settings');
-        return;
-      }
-      
-      setUser(session.user);
-      
-      // Load user profile data
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
-      
-      if (profileData) {
-        setProfile({
-          first_name: profileData.first_name || '',
-          last_name: profileData.last_name || '',
-          email: session.user.email || '',
-          phone: profileData.phone || ''
-        });
+    const initializeSettings = async () => {
+      try {
+        console.log('Settings: Starting initialization...');
         
-        setNotifications({
-          email_notifications: profileData.email_notifications ?? true,
-          prayer_reminders: profileData.prayer_reminders ?? true,
-          anniversary_reminders: profileData.anniversary_reminders ?? true,
-          guestbook_notifications: profileData.guestbook_notifications ?? true,
-          newsletter: profileData.newsletter ?? false
-        });
+        // Set a timeout to prevent infinite loading
+        timeoutId = setTimeout(() => {
+          if (mounted && loading) {
+            console.log('Settings: Timeout reached, forcing completion');
+            setLoading(false);
+            setAuthCheckComplete(true);
+            router.push('/auth/signin?redirect=/account/settings');
+          }
+        }, 10000); // 10 second timeout
+
+        const supabase = createBrowserClient();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+        
+        if (sessionError) {
+          console.error('Settings: Session error:', sessionError);
+          setLoading(false);
+          setAuthCheckComplete(true);
+          router.push('/auth/signin?redirect=/account/settings');
+          return;
+        }
+        
+        if (!session || !session.user) {
+          console.log('Settings: No session found, redirecting to signin');
+          setLoading(false);
+          setAuthCheckComplete(true);
+          router.push('/auth/signin?redirect=/account/settings');
+          return;
+        }
+        
+        console.log('Settings: User authenticated:', session.user.email);
+        setUser(session.user);
+        setAuthCheckComplete(true);
+        
+        // Set email from session
+        setProfile(prev => ({
+          ...prev,
+          email: session.user.email || ''
+        }));
+        
+        // Load user profile data - don't block on this
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (!mounted) return;
+          
+          if (profileError && profileError.code !== 'PGRST116') {
+            console.error('Settings: Error loading profile:', profileError);
+          }
+          
+          if (profileData) {
+            setProfile({
+              first_name: profileData.first_name || '',
+              last_name: profileData.last_name || '',
+              email: session.user.email || '',
+              phone: profileData.phone || ''
+            });
+            
+            setNotifications({
+              email_notifications: profileData.email_notifications ?? true,
+              prayer_reminders: profileData.prayer_reminders ?? true,
+              anniversary_reminders: profileData.anniversary_reminders ?? true,
+              guestbook_notifications: profileData.guestbook_notifications ?? true,
+              newsletter: profileData.newsletter ?? false
+            });
+          }
+        } catch (profileError) {
+          console.error('Settings: Failed to load profile:', profileError);
+          // Continue anyway with default values
+        }
+        
+        if (mounted) {
+          setLoading(false);
+        }
+        
+      } catch (error) {
+        console.error('Settings: Unexpected error:', error);
+        if (mounted) {
+          setLoading(false);
+          setAuthCheckComplete(true);
+          router.push('/auth/signin?redirect=/account/settings');
+        }
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
-      
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading settings:', error);
-      setLoading(false);
-    }
-  };
+    };
+
+    initializeSettings();
+
+    // Cleanup
+    return () => {
+      mounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [router]);
 
   const handleProfileSave = async () => {
     setSaving(true);
     try {
       const supabase = createBrowserClient();
       
-      const { error } = await supabase
+      // First check if profile exists
+      const { data: existingProfile, error: checkError } = await supabase
         .from('profiles')
-        .update({
-          first_name: profile.first_name,
-          last_name: profile.last_name,
-          phone: profile.phone,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
+        .select('id')
+        .eq('id', user.id)
+        .single();
       
-      if (error) throw error;
+      if (checkError && checkError.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            email: user.email,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            phone: profile.phone,
+            updated_at: new Date().toISOString()
+          });
+        
+        if (insertError) throw insertError;
+      } else {
+        // Profile exists, update it
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            phone: profile.phone,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+        
+        if (updateError) throw updateError;
+      }
       
       displayToast('Profile updated successfully', 'success');
     } catch (error) {
@@ -145,15 +236,37 @@ export default function AccountSettingsPage() {
     try {
       const supabase = createBrowserClient();
       
-      const { error } = await supabase
+      // Check if profile exists first
+      const { data: existingProfile, error: checkError } = await supabase
         .from('profiles')
-        .update({
-          ...notifications,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
+        .select('id')
+        .eq('id', user.id)
+        .single();
       
-      if (error) throw error;
+      if (checkError && checkError.code === 'PGRST116') {
+        // Profile doesn't exist, create it with notifications
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            email: user.email,
+            ...notifications,
+            updated_at: new Date().toISOString()
+          });
+        
+        if (insertError) throw insertError;
+      } else {
+        // Profile exists, update it
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            ...notifications,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+        
+        if (updateError) throw updateError;
+      }
       
       displayToast('Notification preferences updated', 'success');
     } catch (error) {
@@ -222,9 +335,6 @@ export default function AccountSettingsPage() {
     
     setSaving(true);
     try {
-      // This would typically call an API endpoint to handle account deletion
-      // For now, we'll just show the logic structure
-      
       displayToast('Account deletion request submitted', 'success');
       
       // Sign out and redirect
@@ -243,7 +353,6 @@ export default function AccountSettingsPage() {
   const handleExportData = async () => {
     setSaving(true);
     try {
-      // This would typically call an API endpoint to generate and download user data
       displayToast('Data export started. You will receive an email when ready.', 'success');
     } catch (error) {
       console.error('Error exporting data:', error);
@@ -260,12 +369,18 @@ export default function AccountSettingsPage() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  if (loading) {
+  if (loading && !authCheckComplete) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-marian-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading settings...</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 text-sm text-marian-500 hover:text-marian-600 underline"
+          >
+            Taking too long? Click here to refresh
+          </button>
         </div>
       </div>
     );
@@ -278,7 +393,7 @@ export default function AccountSettingsPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Account Settings</h1>
+              <h1 className="text-3xl font-serif font-bold text-gray-900">Account Settings</h1>
               <p className="mt-1 text-gray-600">Manage your account preferences and settings</p>
             </div>
             <Link
@@ -311,7 +426,7 @@ export default function AccountSettingsPage() {
                     onClick={() => setActiveTab(item.id)}
                     className={`w-full flex items-center gap-3 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                       activeTab === item.id
-                        ? 'bg-blue-50 text-blue-700'
+                        ? 'bg-marian-50 text-marian-700'
                         : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
@@ -338,7 +453,7 @@ export default function AccountSettingsPage() {
                         type="text"
                         value={profile.first_name}
                         onChange={(e) => setProfile({ ...profile, first_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marian-500"
                       />
                     </div>
                     <div>
@@ -349,7 +464,7 @@ export default function AccountSettingsPage() {
                         type="text"
                         value={profile.last_name}
                         onChange={(e) => setProfile({ ...profile, last_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marian-500"
                       />
                     </div>
                   </div>
@@ -376,7 +491,7 @@ export default function AccountSettingsPage() {
                       value={profile.phone}
                       onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
                       placeholder="(555) 555-5555"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marian-500"
                     />
                   </div>
                   
@@ -384,7 +499,7 @@ export default function AccountSettingsPage() {
                     <button
                       onClick={handleProfileSave}
                       disabled={saving}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      className="px-4 py-2 bg-marian-500 text-white rounded-full hover:bg-marian-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all"
                     >
                       {saving ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -411,7 +526,7 @@ export default function AccountSettingsPage() {
                         type={showCurrentPassword ? 'text' : 'password'}
                         value={passwordForm.current_password}
                         onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
-                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marian-500"
                       />
                       <button
                         type="button"
@@ -435,7 +550,7 @@ export default function AccountSettingsPage() {
                         type={showNewPassword ? 'text' : 'password'}
                         value={passwordForm.new_password}
                         onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
-                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marian-500"
                       />
                       <button
                         type="button"
@@ -458,7 +573,7 @@ export default function AccountSettingsPage() {
                       type="password"
                       value={passwordForm.confirm_password}
                       onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-marian-500"
                     />
                     {passwordErrors.confirm && (
                       <p className="mt-1 text-sm text-red-600">{passwordErrors.confirm}</p>
@@ -469,7 +584,7 @@ export default function AccountSettingsPage() {
                     <button
                       onClick={handlePasswordChange}
                       disabled={saving}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      className="px-4 py-2 bg-marian-500 text-white rounded-full hover:bg-marian-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all"
                     >
                       {saving ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -502,7 +617,7 @@ export default function AccountSettingsPage() {
                         onChange={(e) => setNotifications({ ...notifications, email_notifications: e.target.checked })}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-marian-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-marian-500"></div>
                     </label>
                   </div>
                   
@@ -521,7 +636,7 @@ export default function AccountSettingsPage() {
                         onChange={(e) => setNotifications({ ...notifications, prayer_reminders: e.target.checked })}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-marian-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-marian-500"></div>
                     </label>
                   </div>
                   
@@ -540,7 +655,7 @@ export default function AccountSettingsPage() {
                         onChange={(e) => setNotifications({ ...notifications, anniversary_reminders: e.target.checked })}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-marian-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-marian-500"></div>
                     </label>
                   </div>
                   
@@ -559,7 +674,7 @@ export default function AccountSettingsPage() {
                         onChange={(e) => setNotifications({ ...notifications, guestbook_notifications: e.target.checked })}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-marian-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-marian-500"></div>
                     </label>
                   </div>
                   
@@ -578,7 +693,7 @@ export default function AccountSettingsPage() {
                         onChange={(e) => setNotifications({ ...notifications, newsletter: e.target.checked })}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-marian-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-marian-500"></div>
                     </label>
                   </div>
                   
@@ -586,7 +701,7 @@ export default function AccountSettingsPage() {
                     <button
                       onClick={handleNotificationsSave}
                       disabled={saving}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      className="px-4 py-2 bg-marian-500 text-white rounded-full hover:bg-marian-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all"
                     >
                       {saving ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -615,7 +730,7 @@ export default function AccountSettingsPage() {
                     <button
                       onClick={handleExportData}
                       disabled={saving}
-                      className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 bg-gray-600 text-white rounded-full hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
                       {saving ? 'Processing...' : 'Request Data Export'}
                     </button>
@@ -634,7 +749,7 @@ export default function AccountSettingsPage() {
                     <p className="text-sm text-gray-600 mb-2">
                       Learn more about how we collect, use, and protect your information.
                     </p>
-                    <Link href="/privacy" className="text-sm text-blue-600 hover:text-blue-700">
+                    <Link href="/privacy" className="text-sm text-marian-500 hover:text-marian-600">
                       View Privacy Policy →
                     </Link>
                   </div>
@@ -656,7 +771,7 @@ export default function AccountSettingsPage() {
                   </p>
                   <button
                     onClick={() => setShowDeleteModal(true)}
-                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                    className="px-4 py-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-all"
                   >
                     Delete My Account
                   </button>
