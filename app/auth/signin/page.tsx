@@ -3,7 +3,7 @@
 import { Suspense, useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createBrowserClient, clearAuthData } from '@/lib/supabase/client';
+import { createBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 
 interface SignInFormData {
@@ -18,7 +18,6 @@ interface FormErrors {
   general?: string;
 }
 
-// Move the main component logic to a separate component that uses useSearchParams
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,26 +30,40 @@ function SignInForm() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
-  // Check for redirect parameter or success messages
+  // Check for existing session on mount
   useEffect(() => {
-    // Check if already authenticated
-    const checkExistingSession = async () => {
-      const supabase = createBrowserClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      // If already signed in and no specific redirect, go to account
-      if (session) {
-        const redirect = searchParams.get('redirect');
-        if (!redirect || redirect === '/auth/signin') {
-          router.push('/account');
-          return;
+    const checkAuth = async () => {
+      try {
+        const supabase = createBrowserClient();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (session && !error) {
+          console.log('Existing session found, redirecting...');
+          setIsRedirecting(true);
+          const redirect = searchParams.get('redirect');
+          const destination = redirect && redirect !== '/auth/signin' ? redirect : '/account';
+          
+          // Use both methods to ensure redirect
+          router.push(destination);
+          router.refresh();
+          
+          // Fallback to window.location if router doesn't work
+          setTimeout(() => {
+            if (!window.location.pathname.includes('/account')) {
+              window.location.href = destination;
+            }
+          }, 1000);
         }
+      } catch (error) {
+        console.error('Error checking auth:', error);
       }
     };
     
-    checkExistingSession();
+    checkAuth();
     
+    // Check URL params for messages
     const verified = searchParams.get('verified');
     const reset = searchParams.get('reset');
     const registered = searchParams.get('registered');
@@ -70,7 +83,6 @@ function SignInForm() {
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
 
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!formData.email) {
       newErrors.email = 'Email is required';
@@ -78,7 +90,6 @@ function SignInForm() {
       newErrors.email = 'Please enter a valid email address';
     }
 
-    // Password validation
     if (!formData.password) {
       newErrors.password = 'Password is required';
     }
@@ -92,7 +103,6 @@ function SignInForm() {
     console.log('Sign in form submitted');
     
     if (!validateForm()) {
-      console.log('Validation failed');
       return;
     }
 
@@ -101,8 +111,10 @@ function SignInForm() {
     setSuccessMessage('');
 
     try {
-      // Create a fresh client instance
       const supabase = createBrowserClient();
+
+      // Clear any existing session first
+      await supabase.auth.signOut();
 
       // Sign in the user
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -131,15 +143,15 @@ function SignInForm() {
       }
 
       if (!data?.session || !data?.user) {
-        console.error('No session or user returned');
         setErrors({ general: 'Failed to sign in. Please try again.' });
         setLoading(false);
         return;
       }
 
       console.log('Sign in successful, user:', data.user.email);
+      setIsRedirecting(true);
 
-      // Check if profile exists, create if not
+      // Check/create profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -148,7 +160,6 @@ function SignInForm() {
 
       if (profileError && profileError.code === 'PGRST116') {
         console.log('Creating profile for user');
-        // Profile doesn't exist, create it
         const metadata = data.user.user_metadata || {};
         await supabase
           .from('profiles')
@@ -161,45 +172,73 @@ function SignInForm() {
           });
       }
 
-      // Get redirect URL or default to account
+      // Get redirect URL
       const redirectTo = searchParams.get('redirect') || '/account';
-      
       console.log('Redirecting to:', redirectTo);
       
-      // Use router.push for client-side navigation
-      // This is more reliable than window.location.href
+      // Force page refresh to update auth state
+      router.refresh();
+      
+      // Try multiple redirect methods
       router.push(redirectTo);
+      
+      // Fallback redirects
+      setTimeout(() => {
+        router.replace(redirectTo);
+      }, 100);
+      
+      setTimeout(() => {
+        window.location.href = redirectTo;
+      }, 500);
       
     } catch (error) {
       console.error('Unexpected sign in error:', error);
       setErrors({ general: 'An unexpected error occurred. Please try again.' });
       setLoading(false);
+      setIsRedirecting(false);
     }
   };
 
   const handleInputChange = (field: keyof SignInFormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error for this field when user starts typing
     if (errors[field as keyof FormErrors]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
   };
 
-  // Manual clear cache button for troubleshooting
-  const handleClearCache = () => {
-    clearAuthData();
-    window.location.reload();
-  };
+  // If redirecting, show loading state
+  if (isRedirecting) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-4 shadow-lg sm:rounded-lg sm:px-10 border border-gray-100">
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-marian-500"></div>
+              </div>
+              <p className="mt-4 text-sm text-gray-600">Redirecting to your account...</p>
+              <button
+                onClick={() => window.location.href = '/account'}
+                className="mt-4 text-sm text-marian-500 hover:text-marian-600 underline"
+              >
+                Click here if not redirected
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* Logo/Header */}
         <div className="text-center">
           <Link href="/">
-            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-600 cursor-pointer hover:bg-blue-700 transition-colors">
-              <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
+            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-marian-500 cursor-pointer hover:bg-marian-600 transition-colors">
+              <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 4v16m-8-8h16"/>
               </svg>
             </div>
           </Link>
@@ -224,18 +263,7 @@ function SignInForm() {
             {/* General Error */}
             {errors.general && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
-                <div className="flex justify-between items-start">
-                  <span>{errors.general}</span>
-                  {errors.general.includes('Session error') && (
-                    <button
-                      type="button"
-                      onClick={handleClearCache}
-                      className="ml-2 text-xs underline hover:no-underline"
-                    >
-                      Clear cache
-                    </button>
-                  )}
-                </div>
+                {errors.general}
               </div>
             )}
 
@@ -254,8 +282,9 @@ function SignInForm() {
                 onChange={(e) => handleInputChange('email', e.target.value)}
                 className={`mt-1 block w-full px-3 py-2 border ${
                   errors.email ? 'border-red-300' : 'border-gray-300'
-                } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-600 focus:border-blue-600 sm:text-sm`}
+                } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-marian-500 focus:border-marian-500 sm:text-sm`}
                 placeholder="john@example.com"
+                disabled={loading}
               />
               {errors.email && (
                 <p className="mt-1 text-xs text-red-600">{errors.email}</p>
@@ -278,13 +307,15 @@ function SignInForm() {
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   className={`block w-full px-3 py-2 border ${
                     errors.password ? 'border-red-300' : 'border-gray-300'
-                  } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-600 focus:border-blue-600 sm:text-sm pr-10`}
+                  } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-marian-500 focus:border-marian-500 sm:text-sm pr-10`}
                   placeholder="••••••••"
+                  disabled={loading}
                 />
                 <button
                   type="button"
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                   onClick={() => setShowPassword(!showPassword)}
+                  disabled={loading}
                 >
                   {showPassword ? (
                     <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -312,7 +343,8 @@ function SignInForm() {
                   type="checkbox"
                   checked={formData.rememberMe}
                   onChange={(e) => handleInputChange('rememberMe', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-600 border-gray-300 rounded"
+                  className="h-4 w-4 text-marian-500 focus:ring-marian-500 border-gray-300 rounded"
+                  disabled={loading}
                 />
                 <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-900">
                   Remember me
@@ -322,7 +354,7 @@ function SignInForm() {
               <div className="text-sm">
                 <Link
                   href="/auth/reset-password"
-                  className="font-medium text-blue-600 hover:text-blue-700"
+                  className="font-medium text-marian-500 hover:text-marian-600"
                 >
                   Forgot your password?
                 </Link>
@@ -331,16 +363,23 @@ function SignInForm() {
 
             {/* Submit Button */}
             <div>
-              <Button
+              <button
                 type="submit"
-                variant="primary"
-                size="large"
-                loading={loading}
                 disabled={loading}
-                className="w-full"
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-full shadow-sm text-sm font-medium text-white bg-marian-500 hover:bg-marian-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-marian-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
-                {loading ? 'Signing in...' : 'Sign In'}
-              </Button>
+                {loading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign In'
+                )}
+              </button>
             </div>
 
             {/* Divider */}
@@ -349,7 +388,7 @@ function SignInForm() {
                 <div className="w-full border-t border-gray-300"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">New to GatherMemorials?</span>
+                <span className="px-2 bg-white text-gray-500">New to Gather Memorials?</span>
               </div>
             </div>
 
@@ -357,22 +396,21 @@ function SignInForm() {
             <div className="text-center">
               <Link
                 href="/auth/signup"
-                className="font-medium text-blue-600 hover:text-blue-700"
+                className="font-medium text-marian-500 hover:text-marian-600"
               >
                 Create an account
               </Link>
             </div>
           </form>
 
-          {/* Troubleshooting button - only show when there's an error */}
-          {(errors.general || loading) && (
-            <div className="mt-6 text-center">
+          {/* Manual redirect button if stuck */}
+          {loading && (
+            <div className="mt-4 text-center">
               <button
-                type="button"
-                onClick={handleClearCache}
+                onClick={() => window.location.href = '/account'}
                 className="text-xs text-gray-500 hover:text-gray-700 underline"
               >
-                Having trouble? Clear cache and try again
+                Taking too long? Click here to go to your account
               </button>
             </div>
           )}
@@ -384,21 +422,21 @@ function SignInForm() {
           <div className="flex justify-center space-x-4 text-sm">
             <Link
               href="/how-it-works"
-              className="text-blue-600 hover:text-blue-700"
+              className="text-marian-500 hover:text-marian-600"
             >
               How it works
             </Link>
             <span className="text-gray-300">•</span>
             <Link
               href="/pricing"
-              className="text-blue-600 hover:text-blue-700"
+              className="text-marian-500 hover:text-marian-600"
             >
               Pricing
             </Link>
             <span className="text-gray-300">•</span>
             <Link
               href="/faq"
-              className="text-blue-600 hover:text-blue-700"
+              className="text-marian-500 hover:text-marian-600"
             >
               FAQ
             </Link>
@@ -419,16 +457,15 @@ function SignInForm() {
   );
 }
 
-// Main export wraps the component in Suspense
 export default function SignInPage() {
   return (
     <Suspense 
       fallback={
-        <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col justify-center py-12 sm:px-6 lg:px-8">
           <div className="sm:mx-auto sm:w-full sm:max-w-md">
             <div className="bg-white py-8 px-4 shadow-lg sm:rounded-lg sm:px-10 border border-gray-100">
               <div className="flex justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-marian-500"></div>
               </div>
               <p className="mt-4 text-center text-sm text-gray-600">Loading...</p>
             </div>
