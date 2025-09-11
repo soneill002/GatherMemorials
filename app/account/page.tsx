@@ -28,56 +28,124 @@ export default function AccountDashboard() {
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authCheckComplete, setAuthCheckComplete] = useState(false);
 
   useEffect(() => {
-    checkAuthAndLoadData();
-  }, []);
+    let mounted = true;
+    let timeoutId: NodeJS.Timeout;
 
-  const checkAuthAndLoadData = async () => {
-    try {
-      console.log('Account: Starting auth check...');
-      const supabase = createBrowserClient();
-      
-      // Get the session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Account: Session error:', sessionError);
-        setError('Failed to load session');
-        setIsLoading(false);
-        return;
+    const initializeDashboard = async () => {
+      try {
+        console.log('Account: Starting initialization...');
+        
+        // Set a timeout to prevent infinite loading
+        timeoutId = setTimeout(() => {
+          if (mounted && isLoading) {
+            console.log('Account: Timeout reached, forcing completion');
+            setError('Loading timeout. Please refresh the page.');
+            setIsLoading(false);
+            setAuthCheckComplete(true);
+          }
+        }, 10000); // 10 second timeout
+
+        const supabase = createBrowserClient();
+        
+        // First, try to get the session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+
+        if (sessionError) {
+          console.error('Account: Session error:', sessionError);
+          setError('Authentication error. Please sign in again.');
+          setIsLoading(false);
+          setAuthCheckComplete(true);
+          
+          // Redirect to sign in after a short delay
+          setTimeout(() => {
+            router.push('/auth/signin?redirect=/account');
+          }, 2000);
+          return;
+        }
+        
+        if (!session || !session.user) {
+          console.log('Account: No session found');
+          setIsLoading(false);
+          setAuthCheckComplete(true);
+          router.push('/auth/signin?redirect=/account');
+          return;
+        }
+        
+        console.log('Account: User authenticated:', session.user.email);
+        setUser(session.user);
+        setAuthCheckComplete(true);
+        
+        // Load memorials - don't block on this
+        try {
+          const { data: memorialsData, error: memorialsError } = await supabase
+            .from('memorials')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .order('created_at', { ascending: false });
+          
+          if (!mounted) return;
+          
+          if (memorialsError) {
+            console.error('Account: Error loading memorials:', memorialsError);
+            // Don't set a fatal error, just show empty memorials
+            setMemorials([]);
+          } else {
+            setMemorials(memorialsData || []);
+          }
+        } catch (memorialError) {
+          console.error('Account: Failed to load memorials:', memorialError);
+          setMemorials([]);
+        }
+        
+        if (mounted) {
+          setIsLoading(false);
+        }
+        
+      } catch (unexpectedError) {
+        console.error('Account: Unexpected error:', unexpectedError);
+        if (mounted) {
+          setError('An unexpected error occurred. Please refresh the page.');
+          setIsLoading(false);
+          setAuthCheckComplete(true);
+        }
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
+    };
+
+    initializeDashboard();
+
+    // Listen for auth state changes
+    const supabase = createBrowserClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Account: Auth state changed:', event);
       
-      if (!session || !session.user) {
-        console.log('Account: No session found, redirecting to signin');
-        router.push('/auth/signin?redirect=/account');
-        return;
+      if (event === 'SIGNED_OUT') {
+        router.push('/');
+      } else if (event === 'SIGNED_IN' && session) {
+        if (mounted && !user) {
+          setUser(session.user);
+          setAuthCheckComplete(true);
+        }
       }
-      
-      console.log('Account: User authenticated:', session.user.email);
-      setUser(session.user);
-      
-      // Load memorials
-      const { data: memorialsData, error: memorialsError } = await supabase
-        .from('memorials')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false });
-      
-      if (memorialsError) {
-        console.error('Account: Error loading memorials:', memorialsError);
-        setError('Failed to load memorials');
-      } else {
-        setMemorials(memorialsData || []);
+    });
+
+    // Cleanup
+    return () => {
+      mounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
       }
-      
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Account: Unexpected error:', error);
-      setError('An unexpected error occurred');
-      setIsLoading(false);
-    }
-  };
+      subscription.unsubscribe();
+    };
+  }, [router, user]);
 
   const handleDeleteMemorial = async (memorialId: string) => {
     if (!confirm('Are you sure you want to delete this memorial? This action cannot be undone.')) {
@@ -123,17 +191,25 @@ export default function AccountDashboard() {
     }
   };
 
-  if (isLoading) {
+  // Show loading state
+  if (isLoading && !authCheckComplete) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-marian-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 text-sm text-marian-500 hover:text-marian-600 underline"
+          >
+            Taking too long? Click here to refresh
+          </button>
         </div>
       </div>
     );
   }
 
+  // Show error state
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -146,13 +222,13 @@ export default function AccountDashboard() {
           <div className="space-y-3">
             <button 
               onClick={() => window.location.reload()} 
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              className="w-full px-4 py-2 bg-marian-500 text-white rounded-lg hover:bg-marian-600 transition-colors"
             >
               Refresh Page
             </button>
             <Link 
               href="/auth/signin"
-              className="block w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-center transition-colors"
+              className="block w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-center transition-colors"
             >
               Sign In Again
             </Link>
@@ -162,21 +238,22 @@ export default function AccountDashboard() {
     );
   }
 
+  // Main dashboard render
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">My Dashboard</h1>
+              <h1 className="text-3xl font-serif font-bold text-gray-900">My Dashboard</h1>
               <p className="mt-1 text-gray-600">
-                {user?.email ? `Signed in as ${user.email}` : 'Welcome to your dashboard'}
+                {user?.email ? `Welcome back, ${user.email}` : 'Welcome to your dashboard'}
               </p>
             </div>
             <div className="flex gap-3">
               <Link
                 href="/memorials/new"
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center px-4 py-2 bg-marian-500 text-white rounded-full hover:bg-marian-600 transition-all hover:shadow-lg"
               >
                 <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -185,7 +262,7 @@ export default function AccountDashboard() {
               </Link>
               <button
                 onClick={handleSignOut}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
               >
                 Sign Out
               </button>
@@ -197,10 +274,10 @@ export default function AccountDashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center">
-              <div className="flex-shrink-0 bg-blue-100 rounded-lg p-3">
-                <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="flex-shrink-0 bg-marian-50 rounded-lg p-3">
+                <svg className="w-6 h-6 text-marian-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
               </div>
@@ -211,9 +288,9 @@ export default function AccountDashboard() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center">
-              <div className="flex-shrink-0 bg-green-100 rounded-lg p-3">
+              <div className="flex-shrink-0 bg-green-50 rounded-lg p-3">
                 <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -227,9 +304,9 @@ export default function AccountDashboard() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center">
-              <div className="flex-shrink-0 bg-yellow-100 rounded-lg p-3">
+              <div className="flex-shrink-0 bg-yellow-50 rounded-lg p-3">
                 <svg className="w-6 h-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -245,9 +322,9 @@ export default function AccountDashboard() {
         </div>
 
         {/* Memorials List */}
-        <div className="bg-white rounded-lg shadow">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">Your Memorials</h2>
+            <h2 className="text-xl font-serif font-semibold text-gray-900">Your Memorials</h2>
           </div>
           
           {memorials.length === 0 ? (
@@ -260,7 +337,7 @@ export default function AccountDashboard() {
               <div className="mt-6">
                 <Link
                   href="/memorials/new"
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  className="inline-flex items-center px-4 py-2 bg-marian-500 text-white rounded-full hover:bg-marian-600 transition-all hover:shadow-lg"
                 >
                   <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -304,7 +381,7 @@ export default function AccountDashboard() {
                       {memorial.status === 'published' && (
                         <Link
                           href={`/memorials/${memorial.id}`}
-                          className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700"
+                          className="px-3 py-1 text-sm text-marian-500 hover:text-marian-600"
                         >
                           View
                         </Link>
