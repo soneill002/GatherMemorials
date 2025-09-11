@@ -219,7 +219,7 @@ export function Navbar() {
                         </Link>
                         
                         <Link
-                          href="/account/memorials"
+                          href="/account"  // Changed from "/account/memorials" to "/account"
                           className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           onClick={() => setShowDropdown(false)}
                         >
@@ -355,6 +355,14 @@ export function Navbar() {
                 >
                   <UserIcon className="w-5 h-5 mr-3" />
                   My Dashboard
+                </Link>
+                <Link
+                  href="/account"  // Also updated in mobile menu - points to dashboard
+                  className="flex items-center px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <FileTextIcon className="w-5 h-5 mr-3" />
+                  My Memorials
                 </Link>
                 <Link
                   href="/account/prayer-list"
