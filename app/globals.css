@@ -9,6 +9,11 @@
     --color-liturgical: 255 215 0; /* #FFD700 */
     --color-vatican: 250 250 250; /* #FAFAFA */
     
+    /* Modern Design Colors */
+    --color-marian-blue: 0 61 130; /* #003d82 */
+    --color-liturgical-gold: 212 175 55; /* #d4af37 */
+    --color-soft-gray: 247 248 250; /* #f7f8fa */
+    
     /* Font Variables */
     --font-inter: 'Inter', system-ui, sans-serif;
     --font-playfair: 'Playfair Display', Georgia, serif;
@@ -48,39 +53,53 @@
 }
 
 @layer components {
-  /* Button Base Styles */
+  /* Modern Button Styles */
   .btn {
-    @apply inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-marian-500 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-marian-500 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-primary {
-    @apply bg-marian-500 text-white hover:bg-marian-600 active:bg-marian-700;
+    @apply bg-gradient-to-r from-marian-500 to-blue-600 text-white hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200;
   }
 
   .btn-secondary {
-    @apply bg-liturgical-500 text-vatican-900 hover:bg-liturgical-600 active:bg-liturgical-700;
+    @apply bg-white text-gray-800 border border-gray-300 hover:border-gray-400 transition-all duration-200;
   }
 
   .btn-ghost {
-    @apply hover:bg-vatican-100 text-vatican-700 hover:text-vatican-900;
+    @apply hover:bg-gray-50 text-gray-700 hover:text-gray-900 transition-all duration-200;
   }
 
-  /* Card Component */
+  /* Modern Card Component */
   .card {
-    @apply bg-white rounded-lg shadow-soft border border-vatican-200 p-6;
+    @apply bg-white rounded-xl border border-gray-200 p-6 transition-all duration-300;
   }
 
   .card-hover {
-    @apply hover:shadow-lg transition-shadow duration-200;
+    @apply hover:shadow-lg hover:border-marian-500 hover:-translate-y-1 transition-all duration-300;
+  }
+
+  /* Step Card */
+  .step-card {
+    @apply bg-white rounded-xl p-6 border border-gray-200 transition-all duration-300 ease-in-out;
+  }
+  
+  .step-card:hover {
+    @apply -translate-y-1 shadow-lg border-marian-500;
+  }
+
+  /* Feature Card */
+  .feature-icon {
+    @apply w-12 h-12 rounded-lg flex items-center justify-center bg-marian-500/10;
   }
 
   /* Form Input Styles */
   .input {
-    @apply w-full px-3 py-2 border border-vatican-300 rounded-md focus:ring-2 focus:ring-marian-500 focus:border-transparent transition-colors;
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-marian-500 focus:border-transparent transition-all duration-200;
   }
 
   .label {
-    @apply block text-sm font-medium text-vatican-700 mb-1;
+    @apply block text-sm font-medium text-gray-700 mb-1;
   }
 
   /* Memorial Page Specific */
@@ -99,18 +118,47 @@
 
   /* Loading States */
   .skeleton {
-    @apply animate-pulse bg-vatican-200 rounded;
+    @apply animate-pulse bg-gray-200 rounded;
   }
 
   .spinner {
-    @apply animate-spin rounded-full border-2 border-vatican-300 border-t-marian-500;
+    @apply animate-spin rounded-full border-2 border-gray-300 border-t-marian-500;
+  }
+
+  /* Gradient Borders */
+  .gradient-border {
+    @apply relative bg-gradient-to-br from-marian-500 to-liturgical-500 p-[1px] rounded-xl;
+  }
+  
+  .gradient-border-inner {
+    @apply bg-white rounded-xl;
   }
 }
 
 @layer utilities {
-  /* Text Gradient */
+  /* Text Gradients */
+  .gradient-text {
+    background: linear-gradient(135deg, #003d82 0%, #d4af37 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
   .text-gradient-holy {
     @apply bg-gradient-to-r from-marian-500 to-liturgical-500 bg-clip-text text-transparent;
+  }
+
+  /* Background Gradients */
+  .hero-gradient {
+    background: radial-gradient(ellipse at top, #f0f4f8 0%, white 50%);
+  }
+
+  .gradient-marian {
+    background: linear-gradient(135deg, #003d82 0%, #d4af37 100%);
+  }
+
+  .gradient-subtle {
+    background: linear-gradient(135deg, #003d82 0%, #0052cc 100%);
   }
 
   /* Scroll Smooth */
@@ -128,25 +176,129 @@
     display: none;
   }
 
-  /* Catholic Ornament Border */
-  .border-ornament {
-    position: relative;
+  /* Modern Shadow Utilities */
+  .shadow-soft {
+    box-shadow: 0 2px 15px -3px rgba(0, 48, 135, 0.1), 
+                0 10px 20px -2px rgba(0, 48, 135, 0.04);
   }
 
-  .border-ornament::before,
-  .border-ornament::after {
-    content: '✝';
-    position: absolute;
-    color: rgb(var(--color-liturgical));
-    font-size: 1.5rem;
+  .shadow-hover {
+    box-shadow: 0 12px 24px -10px rgba(0, 61, 130, 0.15);
   }
 
-  .border-ornament::before {
-    left: -1rem;
+  .shadow-glow {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
   }
 
-  .border-ornament::after {
-    right: -1rem;
+  /* Transform Utilities */
+  .hover-lift {
+    @apply transition-transform duration-200 hover:-translate-y-1;
+  }
+
+  .hover-scale {
+    @apply transition-transform duration-200 hover:scale-105;
+  }
+}
+
+/* Custom Animations */
+@keyframes fadeIn {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+@keyframes float {
+  0%, 100% { 
+    transform: translateY(0px); 
+  }
+  50% { 
+    transform: translateY(-10px); 
+  }
+}
+
+@keyframes gentle-pulse {
+  0%, 100% { 
+    opacity: 1; 
+  }
+  50% { 
+    opacity: 0.8; 
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Animation Classes */
+.fade-in {
+  animation: fadeIn 0.6s ease-in;
+}
+
+.floating {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-gentle-pulse {
+  animation: gentle-pulse 4s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+
+/* Modern Hover Effects */
+.hover-shadow-xl {
+  transition: box-shadow 0.3s ease;
+}
+
+.hover-shadow-xl:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 
+              0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Responsive Text */
+@media (max-width: 640px) {
+  .text-responsive {
+    font-size: clamp(1rem, 4vw, 1.25rem);
+  }
+  
+  h1.text-responsive {
+    font-size: clamp(2rem, 8vw, 3rem);
+  }
+  
+  h2.text-responsive {
+    font-size: clamp(1.5rem, 6vw, 2.5rem);
   }
 }
 
@@ -165,21 +317,33 @@
   }
 }
 
-/* Custom Animations */
-@keyframes gentle-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.8; }
+/* Accessibility Improvements */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+/* Focus Visible Improvements */
+.focus-visible:focus-visible {
+  outline: 2px solid #003d82;
+  outline-offset: 2px;
 }
 
-.animate-gentle-pulse {
-  animation: gentle-pulse 4s ease-in-out infinite;
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
